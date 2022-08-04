@@ -56,7 +56,9 @@ ccflags-y += -DTRACE_KERNEL -DOS_LINUX -DMAX_DSPS=1 -DMAX_PROCESSORS=2 -DID_GPP=
 -I$(DSPLINKPATH)/dsplink/gpp/src/ldrv/POOLS
 
 all:
+	sh copy_files.sh
 	make PROFILE=RELEASE -C /media/sdb1/jay/linux-3.2.102 M=$(PWD) ARCH=arm modules V=1
 
 clean:
 	make -C /media/sdb1/jay/linux-3.2.102 M=$(PWD) ARCH=arm clean V=1
+	rm -f *.c

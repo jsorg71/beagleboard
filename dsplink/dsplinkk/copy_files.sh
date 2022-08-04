@@ -65,9 +65,3 @@ cp $DSPLINKPATH/dsplink/gpp/src/pmgr/pmgr_chnl.c .
 cp $DSPLINKPATH/dsplink/gpp/src/pmgr/pmgr_proc.c .
 cp $DSPLINKPATH/dsplink/gpp/src/pmgr/pmgr_msgq.c .
 cp $DSPLINKPATH/dsplink/gpp/src/pmgr/Linux/2.6.18/drv_pmgr.c .
-
-echo "building dsplinkk.ko"
-
-make
-
-echo "done"
