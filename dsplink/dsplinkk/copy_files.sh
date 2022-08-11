@@ -1,7 +1,6 @@
 #!/bin/sh
 
-DVSDKPATH=/opt/dvsdk
-DSPLINKPATH=$DVSDKPATH/dsplink_1_65_01_05_eng
+DSPLINKPATH=$1
 
 echo "copying files from $DSPLINKPATH"
 cp $DSPLINKPATH/dsplink/gpp/src/arch/CFG_map.c .
