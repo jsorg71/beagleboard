@@ -1,0 +1,4 @@
+*.c
+.tmp_versions
+Module.symvers
+modules.order

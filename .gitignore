@@ -1,0 +1,8 @@
+*.obj
+*.o
+*.cdb
+*.map
+*.out
+*_c.c
+*.cmd
+*.ko
