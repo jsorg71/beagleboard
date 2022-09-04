@@ -1,0 +1,5 @@
+prog.module("MEM").ARGSSIZE = 50 ;
+var trace = prog.module("LOG").create("trace");
+trace.bufLen = 4096 ;
+bios.MSGQ.ENABLEMSGQ = true;
+bios.POOL.ENABLEPOOL = true;
