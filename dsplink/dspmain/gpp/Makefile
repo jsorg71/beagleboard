@@ -15,15 +15,8 @@ CFLAGS=-O2 -DOS_LINUX -DMAX_DSPS=1 -DMAX_PROCESSORS=2 -DID_GPP=1 \
 -DCHNL_ZCPY_LINK -DZCPY_LINK -DKFILE_DEFAULT \
 -DOMAP3530 -DOMAP3530_PHYINTERFACE=SHMEM_INTERFACE \
 -DGPP_SWI_MODE \
--I$(DSPLINKPATH)/dsplink/gpp/inc \
 -I$(DSPLINKPATH)/dsplink/gpp/inc/usr \
 -I$(DSPLINKPATH)/dsplink/gpp/inc/sys/Linux \
--I$(DSPLINKPATH)/dsplink/gpp/inc/sys/Linux/2.6.18 \
--I$(DSPLINKPATH)/dsplink/gpp/src/api \
--I$(DSPLINKPATH)/dsplink/gpp/src/api/Linux \
--I$(DSPLINKPATH)/dsplink/gpp/src/api/Linux/2.6.18 \
--I$(DSPLINKPATH)/dsplink/gpp/src/samples/loop \
--I$(DSPLINKPATH)/dsplink/gpp/src/samples/loop/Linux \
 -I.. -Wall -fPIC -D_REENTRANT -DTRACE_USER
 
 LDFLAGS=
@@ -37,3 +30,6 @@ dspmain: $(OBJS)
 
 clean:
 	rm -r $(OBJS) dspmain
+
+dsptest: dsptest.o
+	$(CC) -o dsptest $(LDFLAGS) dsptest.o $(LIBS)
