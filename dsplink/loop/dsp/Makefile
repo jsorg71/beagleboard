@@ -14,7 +14,9 @@ loop_config.obj loop_config_local.obj main.obj swiLoop.obj tskLoop.obj \
 loopcfg.obj loopcfg_c.obj
 
 DVSDKPATH=/opt/dvsdk
-DSPLINKPATH=$(DVSDKPATH)/dsplink_1_65_01_05_eng
+#DSPLINKPATH=$(DVSDKPATH)/dsplink_1_65_01_05_eng
+DSPLINKPATH=$(DVSDKPATH)/dsplink-1_65_02
+#DSPLINKPATH=/home/jay/git/ti/TI-OMAP3-DSPLink/dsplink-1_65_02
 DSPBIOSPATH=$(DVSDKPATH)/dspbios_5_41_03_17
 CGTPATH=$(DVSDKPATH)/cgt6x_6_1_14
 XDCPATH=$(DVSDKPATH)/xdctools_3_16_03_36
@@ -63,6 +65,7 @@ LDFLAGS= \
 -i$(DSPBIOSPATH)/packages/ti/rtdx/lib/c6000 \
 -i$(DSPBIOSPATH)/packages/ti/psl/lib
 LIBS=
+
 CC=$(CGTPATH)/bin/cl6x
 TCONF=$(XDCPATH)/tconf
 STRIP=$(CGTPATH)/bin/strip6x

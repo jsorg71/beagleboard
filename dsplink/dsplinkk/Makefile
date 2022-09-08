@@ -1,7 +1,10 @@
 
 DVSDKPATH=/opt/dvsdk
-DSPLINKPATH=$(DVSDKPATH)/dsplink_1_65_01_05_eng
-LINUXKERNELPATH=/media/sdb1/jay/linux-3.2.102
+#DSPLINKPATH=$(DVSDKPATH)/dsplink_1_65_01_05_eng
+#DSPLINKPATH=/home/jay/git/ti/TI-OMAP3-DSPLink/dsplink-1_65_02
+DSPLINKPATH=$(DVSDKPATH)/dsplink-1_65_02
+#LINUXKERNELPATH=/media/sdb1/jay/linux-3.2.102
+LINUXKERNELPATH=/home/jay/git/RobertCNelson/armv7-multiplatform/KERNEL
 
 obj-m := dsplinkk.o
 
@@ -67,10 +70,10 @@ trc.c linklog.c coff.c no_loader.c coff_64x.c coff_55x.c coff_int.c \
 coff_mem.c coff_shm.c coff_file.c osal.c kfile.c kfile_pseudo.c \
 prcs.c user.c print.c mem.c isr.c dpc.c sync.c kfiledef.c \
 notify_knl.c pmgr_chnl.c pmgr_proc.c pmgr_msgq.c drv_pmgr.c
-	make PROFILE=RELEASE -C $(LINUXKERNELPATH) M=$(PWD) ARCH=arm modules V=1
+	make PROFILE=RELEASE -C $(LINUXKERNELPATH) M=$(PWD) ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- modules
 
 clean:
-	make -C $(LINUXKERNELPATH) M=$(PWD) ARCH=arm clean V=1
+	make -C $(LINUXKERNELPATH) M=$(PWD) ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- clean
 	rm -f *.c
 
 CFG_map.c:
