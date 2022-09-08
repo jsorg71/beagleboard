@@ -99,7 +99,7 @@ prog.module("MEM").STACKSIZE = 0x1000 ;
  *  ============================================================================
 */
 var RESET_VECTOR = prog.module("MEM").create("RESET_VECTOR");
-RESET_VECTOR.base        = 0x90000000;
+RESET_VECTOR.base        = 0x94000000;
 RESET_VECTOR.len         = 0x00000080;
 RESET_VECTOR.space       = "code/data";
 RESET_VECTOR.createHeap  = false;
