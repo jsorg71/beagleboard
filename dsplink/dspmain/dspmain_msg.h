@@ -1,8 +1,7 @@
 
 #define MSGQ_MYMSGID 10
 
-#define MYMSGHEADER MSGQ_MsgHeader msg_header; int subid; int sequence;
-
+#define MYMSGHEADER MSGQ_MsgHeader msg_header; int subid; int sequence; int reply_msgq;
 
 struct my_msg_t
 {
@@ -23,4 +22,11 @@ struct my_msg_log_t
 {
     MYMSGHEADER
     char log_msg[256];
+};
+
+#define GETREPLYMSGQMSGSUBID 2
+struct my_msg_get_reply_msgq_t
+{
+    MYMSGHEADER
+    char msgq_name[256];
 };
