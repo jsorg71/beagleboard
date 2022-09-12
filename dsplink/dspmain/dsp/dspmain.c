@@ -83,51 +83,9 @@ POOL_Config POOL_config =
 };
 
 static MSGQ_Queue g_dsp_msgq = MSGQ_INVALIDMSGQ;
-static MSGQ_Queue g_log_msgq = MSGQ_INVALIDMSGQ;
 
 /* in bios_edma3_drv_sample_omap35xx_cfg.c */
 extern EDMA3_DRV_GblConfigParams sampleEdma3GblCfgParams;
-
-/*****************************************************************************/
-static int
-send_log_msg(const char* text_msg)
-{
-    MSGQ_Msg msg;
-    struct my_msg_log_t* my_msg_log;
-    int status;
-
-    if (g_log_msgq == MSGQ_INVALIDMSGQ)
-    {
-        return SYS_OK;
-    }
-    status = MSGQ_alloc(POOL_ID, &msg, sizeof(struct my_msg_log_t));
-    if (status == SYS_OK)
-    {
-        MSGQ_setMsgId(msg, MSGQ_MYMSGID);
-        my_msg_log = (struct my_msg_log_t*)msg;
-        my_msg_log->subid = LOGMSGSUBID;
-        my_msg_log->sequence = 0;
-        my_msg_log->reply_msgq = 0;
-        SYS_sprintf(my_msg_log->log_msg, "%s", text_msg);
-        status = MSGQ_put(g_log_msgq, msg);
-        if (status != SYS_OK)
-        {
-            MSGQ_free(msg);
-        }
-    }
-    return status;
-}
-
-/*****************************************************************************/
-static void
-process_MULTMSGSUBID(struct my_msg_t* my_msg)
-{
-    struct my_msg_mult_t* my_msg_mult;
-
-    my_msg_mult = (struct my_msg_mult_t*)my_msg;
-    my_msg_mult->z = my_msg_mult->x * my_msg_mult->y;
-}
-
 
 /*****************************************************************************/
 static void
@@ -146,6 +104,16 @@ process_GETREPLYMSGQMSGSUBID(struct my_msg_t* my_msg)
 
 /*****************************************************************************/
 static void
+process_MULTMSGSUBID(struct my_msg_t* my_msg)
+{
+    struct my_msg_mult_t* my_msg_mult;
+
+    my_msg_mult = (struct my_msg_mult_t*)my_msg;
+    my_msg_mult->z = my_msg_mult->x * my_msg_mult->y;
+}
+
+/*****************************************************************************/
+static void
 process_MSGQ_MYMSGID(MSGQ_Msg msg)
 {
     struct my_msg_t* my_msg;
@@ -154,12 +122,12 @@ process_MSGQ_MYMSGID(MSGQ_Msg msg)
     my_msg = (struct my_msg_t*)msg;
     switch (my_msg->subid)
     {
-        case MULTMSGSUBID:
-            process_MULTMSGSUBID(my_msg);
-            break;
         case GETREPLYMSGQMSGSUBID:
             process_GETREPLYMSGQMSGSUBID(my_msg);
             return;
+        case MULTMSGSUBID:
+            process_MULTMSGSUBID(my_msg);
+            break;
     }
     if (my_msg->reply_msgq != 0)
     {
@@ -181,23 +149,13 @@ process_MSGQ_ASYNCLOCATEMSGID(MSGQ_Msg msg)
 {
     MSGQ_AsyncLocateMsg* async_locate_msg;
     struct my_msg_get_reply_msgq_t* my_msg_get_reply_msgq;
-    char text[128];
     int status;
 
     async_locate_msg = (MSGQ_AsyncLocateMsg*)msg;
-    if (g_log_msgq == MSGQ_INVALIDMSGQ)
-    {
-        g_log_msgq = async_locate_msg->msgqQueue;
-    }
     if (async_locate_msg->arg != NULL)
     {
         my_msg_get_reply_msgq = (struct my_msg_get_reply_msgq_t*)
                                 (async_locate_msg->arg);
-        SYS_sprintf(text, "messageSWI: got MSGQ_ASYNCLOCATEMSGID "
-                    "msgq 0x%x name %s",
-                    async_locate_msg->msgqQueue,
-                    my_msg_get_reply_msgq->msgq_name);
-        send_log_msg(text);
         my_msg_get_reply_msgq->reply_msgq = async_locate_msg->msgqQueue;
         status = MSGQ_put(my_msg_get_reply_msgq->reply_msgq,
                           (MSGQ_Msg)my_msg_get_reply_msgq);
@@ -215,24 +173,33 @@ messageSWI(Arg arg0, Arg arg1)
 {
     MSGQ_Msg msg;
     int status;
+    Uns index;
+    Uns count;
 
     (void)arg0;
     (void)arg1;
 
-    status = MSGQ_get(g_dsp_msgq, &msg, 0);
+    status = MSGQ_count(g_dsp_msgq, &count);
     if (status == SYS_OK)
     {
-        switch (MSGQ_getMsgId(msg))
+        for (index = 0; index < count; index++)
         {
-            case MSGQ_MYMSGID:
-                process_MSGQ_MYMSGID(msg);
-                break;
-            case MSGQ_ASYNCLOCATEMSGID:
-                process_MSGQ_ASYNCLOCATEMSGID(msg);
-                break;
-            default:
-                MSGQ_free(msg);
-                break;
+            status = MSGQ_get(g_dsp_msgq, &msg, 0);
+            if (status == SYS_OK)
+            {
+                switch (MSGQ_getMsgId(msg))
+                {
+                    case MSGQ_MYMSGID:
+                        process_MSGQ_MYMSGID(msg);
+                        break;
+                    case MSGQ_ASYNCLOCATEMSGID:
+                        process_MSGQ_ASYNCLOCATEMSGID(msg);
+                        break;
+                    default:
+                        MSGQ_free(msg);
+                        break;
+                }
+            }
         }
     }
 }

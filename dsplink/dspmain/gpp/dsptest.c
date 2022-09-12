@@ -51,7 +51,6 @@ send_mult_msg(struct dsptest_t* dsptest, int x, int y)
     return status;
 }
 
-
 /*****************************************************************************/
 static DSP_STATUS
 send_get_reply_msgq_msg(struct dsptest_t* dsptest, const char* msgq_name)

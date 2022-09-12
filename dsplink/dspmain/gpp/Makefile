@@ -6,14 +6,11 @@ DSPLINKPATH=$(DVSDKPATH)/dsplink-1_65_02
 CC=/usr/bin/arm-linux-gnueabihf-gcc
 STRIP=/usr/bin/arm-linux-gnueabihf-strip
 
-OBJS=dspmain.o
+OBJS=dspmain.o dspmain_peer.o
 
 CFLAGS=-O2 -DOS_LINUX -DMAX_DSPS=1 -DMAX_PROCESSORS=2 -DID_GPP=1 \
--DPROC_COMPONENT -DPOOL_COMPONENT -DNOTIFY_COMPONENT \
--DMPCS_COMPONENT -DRINGIO_COMPONENT -DMPLIST_COMPONENT \
--DMSGQ_COMPONENT -DMSGQ_ZCPY_LINK -DCHNL_COMPONENT \
--DCHNL_ZCPY_LINK -DZCPY_LINK -DKFILE_DEFAULT \
--DOMAP3530 -DOMAP3530_PHYINTERFACE=SHMEM_INTERFACE \
+-DPROC_COMPONENT -DPOOL_COMPONENT -DMSGQ_COMPONENT -DMSGQ_ZCPY_LINK \
+-DZCPY_LINK -DOMAP3530 -DOMAP3530_PHYINTERFACE=SHMEM_INTERFACE \
 -DGPP_SWI_MODE \
 -I$(DSPLINKPATH)/dsplink/gpp/inc/usr \
 -I$(DSPLINKPATH)/dsplink/gpp/inc/sys/Linux \
@@ -33,3 +30,6 @@ clean:
 
 dsptest: dsptest.o
 	$(CC) -o dsptest $(LDFLAGS) dsptest.o $(LIBS)
+
+dsptestsck: dsptestsck.o libdspmain.o
+	$(CC) -o dsptestsck $(LDFLAGS) dsptestsck.o libdspmain.o $(LIBS)
