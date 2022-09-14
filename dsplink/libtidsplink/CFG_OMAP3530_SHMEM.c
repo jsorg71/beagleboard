@@ -249,6 +249,16 @@ STATIC LINKCFG_MemEntry  LINKCFG_memTable_00 [] =
         0x00100000,            /* SIZE           : Size of the memory region */
         FALSE,                 /* SHARED         : Shared access memory? */
         FALSE                  /* SYNCD          : Synchornized? */
+    },
+    {
+        10,                    /* ENTRY          : Entry number */
+        "CMEM",                /* NAME           : Name of the memory region */
+        0x94200000,            /* ADDRPHYS       : Physical address */
+        0x94200000,            /* ADDRDSPVIRT    : DSP virtual address */
+        (Uint32) -1,           /* ADDRGPPVIRT    : GPP virtual address (if known) */
+        0xbe00000,             /* SIZE           : Size of the memory region */
+        FALSE,                 /* SHARED         : Shared access memory? */
+        FALSE                  /* SYNCD          : Synchornized? */
     }
 } ;
 
