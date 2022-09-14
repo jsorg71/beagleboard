@@ -14,11 +14,17 @@ int main(int argc, char** argv)
     int x;
     int y;
     int z;
+    int sleep_time;
     void* obj;
     
     error = dspmain_init(&obj);
     printf("main: dspmain_init %d\n", error);
 
+    sleep_time = 500;
+    if (argc > 1)
+    {
+        sleep_time = atoi(argv[1]);
+    }
     srand(time(0));
     for (;;)
     {
@@ -49,7 +55,11 @@ int main(int argc, char** argv)
         error = dspmain_mult_result(obj, cookie[2], &z);
         printf("main: dspmain_mult_result %d z %d\n", error, z);
 
-        usleep(500 * 1000);
+        if (sleep_time > 0)
+        {
+            //usleep(500 * 1000);
+            usleep(sleep_time * 1000);
+        }
     }
 
     error = dspmain_deinit(obj);

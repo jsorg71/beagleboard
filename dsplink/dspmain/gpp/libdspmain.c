@@ -122,6 +122,7 @@ dspmain_mult_result(void* obj, int cookie, int* z)
     struct libdspmain_t* ldsp;
     struct stream* in_s;
     int error;
+    int subid;
     int size;
     int sequence;
 
@@ -138,9 +139,13 @@ dspmain_mult_result(void* obj, int cookie, int* z)
     {
         return 1;
     }
-    in_uint8s(in_s, 4); /* subid */
+    in_uint32_le(in_s, subid);
+    if (subid != 1) /* MULTMSGSUBID */
+    {
+        return 1;
+    }
     in_uint32_le(in_s, size);
-    if (size < 12)
+    if (size != 24)
     {
         return 1;
     }
