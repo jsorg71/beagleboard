@@ -65,6 +65,7 @@ bios.enableTskManager(prog);
  *  Enable 32K of L2 cache, 32K of L1D cache and 16K for L1P.
  *  Adjust the size of IRAM, L1DSRAM, L1PSRAM accordingly.
  *  Enable caching for addresses 0x8700_0000 - 0x87FF_FFFF by setting MAR135
+ *  Enable caching for addresses 0x9400_0000 - 0x94FF_FFFF by setting MAR148
  *  ============================================================================
  */
 prog.module("GBL").ENABLEALLTRC        = false ;
@@ -75,7 +76,9 @@ prog.module("GBL").C64PLUSCONFIGURE    = true  ;
 prog.module("GBL").C64PLUSL2CFG        = "32k" ;
 prog.module("GBL").C64PLUSL1DCFG       = "32k" ;
 prog.module("GBL").C64PLUSL1PCFG       = "16k";
-prog.module("GBL").C64PLUSMAR128to159  = 0x00000080 ;
+/* prog.module("GBL").C64PLUSMAR128to159  = 0x00000080 ;
+   prog.module("GBL").C64PLUSMAR128to159  = 0xFFF00000 ; */
+prog.module("GBL").C64PLUSMAR128to159  = 0x00000000;
 
 var IRAM = prog.module("MEM").instance("IRAM");
 IRAM.len              = IRAM.len - 0x8000;
