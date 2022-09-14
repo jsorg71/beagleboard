@@ -1,6 +1,9 @@
 
 // *((int*)(0x94000080 - 4)) = 0xAABBCCDD;
 //sudo ./memdump 2483028092 8
+// *((int*)0x10f10000) = 0xAAAAAACB;
+// *((int*)0x94200000) = 0xAAAAAACB;
+//sudo ./memdump 2485125120 4
 
 #include <std.h>
 #include <sys.h>
