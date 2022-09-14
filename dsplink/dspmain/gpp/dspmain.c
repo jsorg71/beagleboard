@@ -258,30 +258,6 @@ dspmain_process_one_msgq(struct dspmain_t* dspmain, int timeout)
 
 /*****************************************************************************/
 static int
-dspmain_get_select_info(struct dspmain_t* dspmain, int* max_fd,
-                        fd_set* rfds, fd_set* wfds)
-{
-    int lmax_fd;
-
-    FD_ZERO(rfds);
-    FD_ZERO(wfds);
-    FD_SET(dspmain->listen_sck, rfds);
-    lmax_fd = dspmain->listen_sck;
-    FD_SET(g_term_pipe[0], rfds);
-    if (g_term_pipe[0] > lmax_fd)
-    {
-        lmax_fd = g_term_pipe[0];
-    }
-    if (dspmain_peer_get_fds(dspmain, &lmax_fd, rfds, wfds) != 0)
-    {
-        LOGLN((LOG_ERROR, LOGS "dspmain_peer_get_fds failed", LOGP));
-    }
-    *max_fd = lmax_fd;
-    return 0;
-}
-
-/*****************************************************************************/
-static int
 dspmain_wait_fds(struct dspmain_t* dspmain,
                  fd_set* rfds, fd_set* wfds, int timeout)
 {
@@ -290,7 +266,19 @@ dspmain_wait_fds(struct dspmain_t* dspmain,
     struct timeval* ptime;
     int max_fd;
 
-    dspmain_get_select_info(dspmain, &max_fd, rfds, wfds);
+    FD_ZERO(rfds);
+    FD_ZERO(wfds);
+    FD_SET(dspmain->listen_sck, rfds);
+    max_fd = dspmain->listen_sck;
+    FD_SET(g_term_pipe[0], rfds);
+    if (g_term_pipe[0] > max_fd)
+    {
+        max_fd = g_term_pipe[0];
+    }
+    if (dspmain_peer_get_fds(dspmain, &max_fd, rfds, wfds) != DSP_ERROR_NONE)
+    {
+        LOGLN((LOG_ERROR, LOGS "dspmain_peer_get_fds failed", LOGP));
+    }
     if (timeout == -1)
     {
         ptime = NULL;
@@ -306,10 +294,9 @@ dspmain_wait_fds(struct dspmain_t* dspmain,
 }
 
 /*****************************************************************************/
-static int
+static void
 dspmain_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
 {
-    int error;
     int sck;
     socklen_t sock_len;
     struct sockaddr_un s;
@@ -318,6 +305,7 @@ dspmain_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
     {
         LOGLN((LOG_INFO, LOGS "term set", LOGP));
         dspmain->term = 1;
+        return;
     }
     if (FD_ISSET(dspmain->listen_sck, rfds))
     {
@@ -325,14 +313,14 @@ dspmain_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
         sck = accept(dspmain->listen_sck, (struct sockaddr*)&s, &sock_len);
         if (sck != -1)
         {
-            if (dspmain_peer_add_fd(dspmain, sck) != 0)
+            if (dspmain_peer_add_fd(dspmain, sck) != DSP_ERROR_NONE)
             {
+                LOGLN((LOG_ERROR, LOGS "dspmain_peer_add_fd failed", LOGP));
                 close(sck);
             }
         }
     }
-    error = dspmain_peer_check_fds(dspmain, rfds, wfds);
-    return error;
+    dspmain_peer_check_fds(dspmain, rfds, wfds);
 }
 
 /*****************************************************************************/
