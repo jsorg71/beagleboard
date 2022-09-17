@@ -19,8 +19,10 @@
 #include <zcpy_mqt.h>
 
 #include <ti/sdo/edma3/drv/edma3_drv.h>
+#include <ti/sdo/edma3/drv/sample/bios_edma3_drv_sample.h>
 
 #include "dspmain_msg.h"
+#include "dspmain_edma.h"
 
 #define NUM_POOLS 1
 #define NUM_MSG_QUEUES 1
@@ -34,7 +36,7 @@ static ZCPYMQT_Params mqtParams =
     POOL_ID
 };
 
-static MSGQ_Obj msgQueues[NUM_MSG_QUEUES];
+static MSGQ_Obj msgQueues[NUM_MSG_QUEUES] = { 0 };
 
 static MSGQ_TransportObj transports[MAX_PROCESSORS] =
 {
@@ -73,7 +75,7 @@ static POOL_Obj pools[NUM_POOLS] =
     {
         &SMAPOOL_init,             /* Init Function                      */
         (POOL_Fxns*)&SMAPOOL_FXNS, /* Pool interface functions           */
-        &PoolParams[0],            /* Pool params                        */
+        PoolParams + 0,            /* Pool params                        */
         NULL                       /* Pool object: Set within pool impl. */
     }
 };
@@ -87,8 +89,7 @@ POOL_Config POOL_config =
 
 static MSGQ_Queue g_dsp_msgq = MSGQ_INVALIDMSGQ;
 
-/* in bios_edma3_drv_sample_omap35xx_cfg.c */
-extern EDMA3_DRV_GblConfigParams sampleEdma3GblCfgParams;
+static SEM_Obj g_notifySemObj = { 0 };
 
 /*****************************************************************************/
 static void
@@ -131,6 +132,9 @@ process_MSGQ_MYMSGID(MSGQ_Msg msg)
         case MULTMSGSUBID:
             process_MULTMSGSUBID(my_msg);
             break;
+        case CRC32MSGSUBID:
+            process_CRC32MSGSUBID(my_msg);
+            break;
     }
     if (my_msg->reply_msgq != 0)
     {
@@ -168,71 +172,54 @@ process_MSGQ_ASYNCLOCATEMSGID(MSGQ_Msg msg)
         }
     }
     MSGQ_free(msg);
- }
+}
 
 /*****************************************************************************/
-static void
-messageSWI(Arg arg0, Arg arg1)
+static int
+my_tsk(void)
 {
     MSGQ_Msg msg;
+    MSGQ_Attrs msgqAttrs;
     int status;
-    Uns index;
-    Uns count;
 
-    (void)arg0;
-    (void)arg1;
-
-    status = MSGQ_count(g_dsp_msgq, &count);
-    if (status == SYS_OK)
+    SEM_new(&g_notifySemObj, 0);
+    msgqAttrs = MSGQ_ATTRS;
+    msgqAttrs.notifyHandle = &g_notifySemObj;
+    msgqAttrs.pend = (MSGQ_Pend)SEM_pendBinary;
+    msgqAttrs.post = (MSGQ_Post)SEM_postBinary;
+    status = MSGQ_open(DSP_MSGQNAME, &g_dsp_msgq, &msgqAttrs);
+    if (status != SYS_OK)
     {
-        for (index = 0; index < count; index++)
+        return 1;
+    }
+    MSGQ_setErrorHandler(g_dsp_msgq, POOL_ID);
+    status = SYS_OK;
+    while ((status == SYS_OK) || (status == SYS_ETIMEOUT))
+    {
+        status = MSGQ_get(g_dsp_msgq, &msg, SYS_FOREVER);
+        if (status == SYS_OK)
         {
-            status = MSGQ_get(g_dsp_msgq, &msg, 0);
-            if (status == SYS_OK)
+            switch (MSGQ_getMsgId(msg))
             {
-                switch (MSGQ_getMsgId(msg))
-                {
-                    case MSGQ_MYMSGID:
-                        process_MSGQ_MYMSGID(msg);
-                        break;
-                    case MSGQ_ASYNCLOCATEMSGID:
-                        process_MSGQ_ASYNCLOCATEMSGID(msg);
-                        break;
-                    default:
-                        MSGQ_free(msg);
-                        break;
-                }
+                case MSGQ_MYMSGID:
+                    process_MSGQ_MYMSGID(msg);
+                    break;
+                case MSGQ_ASYNCLOCATEMSGID:
+                    process_MSGQ_ASYNCLOCATEMSGID(msg);
+                    break;
+                default:
+                    MSGQ_free(msg);
+                    break;
             }
         }
     }
+    return 0;
 }
 
 /*****************************************************************************/
 void
 main(int argc, char** argv)
 {
-    SWI_Attrs swiAttrs = SWI_ATTRS;
-    MSGQ_Attrs msgqAttrs = MSGQ_ATTRS;
-    SWI_Handle swi;
-    int status;
-
     DSPLINK_init();
-    swiAttrs.fxn = messageSWI;
-    swi = SWI_create(&swiAttrs);
-    if (swi == NULL)
-    {
-        return;
-    }
-    msgqAttrs.notifyHandle = swi;
-    msgqAttrs.post = (MSGQ_Post)SWI_post;
-    msgqAttrs.pend = NULL;
-    status = MSGQ_open(DSP_MSGQNAME, &g_dsp_msgq, &msgqAttrs);
-    if (status != SYS_OK)
-    {
-        return;
-    }
-    MSGQ_setErrorHandler(g_dsp_msgq, POOL_ID);
-    /* init edma3 */
-    EDMA3_DRV_create(0, &sampleEdma3GblCfgParams, NULL);
-    return;
+    TSK_create(my_tsk, NULL, 0);
 }

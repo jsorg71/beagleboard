@@ -1,5 +1,6 @@
 utils.importFile("dsplink-omap3530-base.tci") ;
-utils.importFile("dsplink-zcpydata-swi.tci") ;
+utils.importFile("dsplink-iom.tci");
+utils.importFile("dsplink-zcpydata-tsk.tci") ;
 utils.importFile("dspmain.tci") ;
 var IRAM    = prog.module("MEM").instance("IRAM");
 var L1DSRAM = prog.module("MEM").instance("L1DSRAM");

@@ -56,9 +56,20 @@ utils.loadPlatform("ti.platforms.evm3530");
  *  ============================================================================
  */
 bios.disableRealTimeAnalysis(prog);
+/* bios.enableRealTimeAnalysis(prog); */
 bios.enableMemoryHeaps(prog);
 bios.disableRtdx(prog);
+/* bios.enableRtdx(prog); */
 bios.enableTskManager(prog);
+
+/* Enable ECM Handler */
+bios.ECM.ENABLE = true;
+
+/* ECM configuration - manually Reflect these settings in soc.h */
+bios.HWI.instance("HWI_INT7").interruptSelectNumber = 0;
+bios.HWI.instance("HWI_INT8").interruptSelectNumber = 1;
+bios.HWI.instance("HWI_INT9").interruptSelectNumber = 2;
+bios.HWI.instance("HWI_INT10").interruptSelectNumber = 3;
 
 /*  ============================================================================
  *  GBL
@@ -71,13 +82,14 @@ bios.enableTskManager(prog);
 prog.module("GBL").ENABLEALLTRC        = false ;
 prog.module("GBL").PROCID              = parseInt (arguments [0]) ;
 
-
 prog.module("GBL").C64PLUSCONFIGURE    = true  ;
 prog.module("GBL").C64PLUSL2CFG        = "32k" ;
 prog.module("GBL").C64PLUSL1DCFG       = "32k" ;
 prog.module("GBL").C64PLUSL1PCFG       = "16k";
 /* prog.module("GBL").C64PLUSMAR128to159  = 0x00000080 ;
-   prog.module("GBL").C64PLUSMAR128to159  = 0xFFF00000 ; */
+   prog.module("GBL").C64PLUSMAR128to159  = 0xFFF00000 ;
+   prog.module("GBL").C64PLUSMAR128to159  = 0x00000000 ; */
+
 prog.module("GBL").C64PLUSMAR128to159  = 0x00000000;
 
 var IRAM = prog.module("MEM").instance("IRAM");

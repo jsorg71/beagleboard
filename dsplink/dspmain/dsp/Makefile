@@ -10,10 +10,11 @@ dsplinkmqt.obj dsplinkmsgq.obj zcpy_mqt.obj \
 dsplinkdata.obj zcpy_data.obj \
 notify.obj _notify.obj \
 ringio.obj _ringio.obj \
-dspmain.obj \
+dspmain.obj dspmain_edma.obj \
 dspmaincfg.obj dspmaincfg_c.obj \
 bios_edma3_drv_sample_cs.obj \
-bios_edma3_drv_sample_omap35xx_cfg.obj
+bios_edma3_drv_sample_omap35xx_cfg.obj \
+bios_edma3_drv_sample_init.obj
 
 DVSDKPATH=/opt/dvsdk
 #DSPLINKPATH=$(DVSDKPATH)/dsplink_1_65_01_05_eng
@@ -28,7 +29,7 @@ CFLAGS=-O2 -DMAX_DSPS=1 -DMAX_PROCESSORS=2 -DID_GPP=1 -DOMAP3530 \
 -DRINGIO_COMPONENT -DMPLIST_COMPONENT -DMSGQ_COMPONENT -DMSGQ_ZCPY_LINK \
 -DCHNL_COMPONENT -DCHNL_ZCPY_LINK -DZCPY_LINK -DPROCID=0 -DOMAP3530 \
 -DOMAP3530_INTERFACE=SHMEM_INTERFACE -DPHYINTERFACE=SHMEM_INTERFACE \
--DDSP_SWI_MODE \
+-DDSP_TSK_MODE \
 -I$(DSPLINKPATH)/dsplink/dsp/inc \
 -I$(DSPLINKPATH)/dsplink/dsp/inc/DspBios \
 -I$(DSPLINKPATH)/dsplink/dsp/inc/DspBios/5.XX \
