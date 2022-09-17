@@ -24,6 +24,7 @@ all: dspmain
 
 dspmain: $(OBJS)
 	$(CC) -o dspmain $(LDFLAGS) $(OBJS) $(LIBS)
+	$(STRIP) dspmain
 
 clean:
 	rm -r $(OBJS) dspmain

@@ -21,6 +21,7 @@
 #include "dspmain_error.h"
 
 #define SCK_HEADER_BYTES 8
+#define SCK_MAX_MSG_BYTES 512
 
 /*****************************************************************************/
 static int
@@ -108,7 +109,7 @@ dspmain_queue_mult(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
     {
         return DSP_ERROR_MEMORY;
     }
-    out_s->data = xnew(char, 1024);
+    out_s->data = xnew(char, 24);
     if (out_s->data == NULL)
     {
         free(out_s);
@@ -124,8 +125,42 @@ dspmain_queue_mult(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
     out_s->end = out_s->p;
     out_s->p = out_s->data;
     rv = dspmain_peer_queue(peer, out_s);
-    free(out_s->data);
-    free(out_s);
+    return rv;
+}
+
+/*****************************************************************************/
+int
+dspmain_queue_crc32(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
+                    struct my_msg_crc32_t* my_msg_crc32)
+{
+    struct stream* out_s;
+    int rv;
+
+    (void)dspmain;
+    out_s = xnew0(struct stream, 1);
+    if (out_s == NULL)
+    {
+        return DSP_ERROR_MEMORY;
+    }
+    out_s->data = xnew(char, 36);
+    if (out_s->data == NULL)
+    {
+        free(out_s);
+        return DSP_ERROR_MEMORY;
+    }
+    out_s->p = out_s->data;
+    out_uint32_le(out_s, CRC32MSGSUBID);
+    out_uint32_le(out_s, 36);
+    out_uint32_le(out_s, my_msg_crc32->user[1]); /* sequence */
+    out_uint32_le(out_s, my_msg_crc32->addr);
+    out_uint32_le(out_s, my_msg_crc32->format);
+    out_uint32_le(out_s, my_msg_crc32->width);
+    out_uint32_le(out_s, my_msg_crc32->height);
+    out_uint32_le(out_s, my_msg_crc32->stride_bytes);
+    out_uint32_le(out_s, my_msg_crc32->crc32);
+    out_s->end = out_s->p;
+    out_s->p = out_s->data;
+    rv = dspmain_peer_queue(peer, out_s);
     return rv;
 }
 
@@ -141,7 +176,7 @@ dspmain_peer_process_msg_mult(struct dspmain_t* dspmain,
     int user[2];
     DSP_STATUS status;
 
-    if (!s_check_rem(in_s, 12))
+    if (!s_check_rem(in_s, 16))
     {
         return DSP_ERROR_RANGE;
     }
@@ -151,6 +186,42 @@ dspmain_peer_process_msg_mult(struct dspmain_t* dspmain,
     in_uint32_le(in_s, y);
     in_uint32_le(in_s, z);
     status = send_mult_msg(dspmain, user, 2, x, y, z);
+    if (DSP_FAILED(status))
+    {
+        return DSP_ERROR_PARAM;
+    }
+    return DSP_ERROR_NONE;
+}
+
+/*****************************************************************************/
+static int
+dspmain_peer_process_msg_crc32(struct dspmain_t* dspmain,
+                               struct dspmain_peer_t* peer,
+                               struct stream* in_s)
+{
+    int addr;
+    int format;
+    int width;
+    int height;
+    int stride_bytes;
+    int crc32;
+    int user[2];
+    DSP_STATUS status;
+
+    if (!s_check_rem(in_s, 28))
+    {
+        return DSP_ERROR_RANGE;
+    }
+    user[0] = peer->id;
+    in_uint32_le(in_s, user[1]); /* sequence */
+    in_uint32_le(in_s, addr);
+    in_uint32_le(in_s, format);
+    in_uint32_le(in_s, width);
+    in_uint32_le(in_s, height);
+    in_uint32_le(in_s, stride_bytes);
+    in_uint32_le(in_s, crc32);
+    status = send_crc32_msg(dspmain, user, 2, addr, format, width, height,
+                            stride_bytes, crc32);
     if (DSP_FAILED(status))
     {
         return DSP_ERROR_PARAM;
@@ -180,6 +251,9 @@ dspmain_peer_process_msg(struct dspmain_t* dspmain, struct dspmain_peer_t* peer)
     {
         case MULTMSGSUBID:
             rv = dspmain_peer_process_msg_mult(dspmain, peer, in_s);
+            break;
+        case CRC32MSGSUBID:
+            rv = dspmain_peer_process_msg_crc32(dspmain, peer, in_s);
             break;
     }
     return rv;
@@ -243,7 +317,7 @@ dspmain_peer_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
                 {
                     return DSP_ERROR_MEMORY;
                 }
-                in_s->size = 1024 * 1024;
+                in_s->size = SCK_MAX_MSG_BYTES;
                 in_s->data = xnew(char, in_s->size);
                 if (in_s->data == NULL)
                 {
@@ -387,6 +461,23 @@ dspmain_peer_add_fd(struct dspmain_t* dspmain, int sck)
 int
 dspmain_peer_queue(struct dspmain_peer_t* peer, struct stream* out_s)
 {
+    if (peer->out_s_tail == NULL)
+    {
+        peer->out_s_head = out_s;
+        peer->out_s_tail = out_s;
+    }
+    else
+    {
+        peer->out_s_tail->next = out_s;
+        peer->out_s_tail = out_s;
+    }
+    return DSP_ERROR_NONE;
+}
+
+/*****************************************************************************/
+int
+dspmain_peer_queue_copy(struct dspmain_peer_t* peer, struct stream* out_s)
+{
     struct stream* lout_s;
     int bytes;
 
@@ -396,7 +487,7 @@ dspmain_peer_queue(struct dspmain_peer_t* peer, struct stream* out_s)
         return DSP_ERROR_MEMORY;
     }
     bytes = (int)(out_s->end - out_s->data);
-    if ((bytes < 1) || (bytes > 1024 * 1024))
+    if ((bytes < SCK_HEADER_BYTES) || (bytes > SCK_MAX_MSG_BYTES))
     {
         free(lout_s);
         return DSP_ERROR_PARAM;
@@ -412,15 +503,5 @@ dspmain_peer_queue(struct dspmain_peer_t* peer, struct stream* out_s)
     out_uint8p(lout_s, out_s->data, bytes);
     lout_s->end = lout_s->p;
     lout_s->p = lout_s->data;
-    if (peer->out_s_tail == NULL)
-    {
-        peer->out_s_head = lout_s;
-        peer->out_s_tail = lout_s;
-    }
-    else
-    {
-        peer->out_s_tail->next = lout_s;
-        peer->out_s_tail = lout_s;
-    }
-    return DSP_ERROR_NONE;
+    return dspmain_peer_queue(peer, lout_s);
 }

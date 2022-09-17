@@ -4,8 +4,19 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "libdspmain.h"
+
+/*****************************************************************************/
+static int
+get_mstime(void)
+{
+    struct timeval tp;
+
+    gettimeofday(&tp, 0);
+    return (tp.tv_sec * 1000) + (tp.tv_usec / 1000);
+}
 
 int main(int argc, char** argv)
 {
@@ -14,6 +25,7 @@ int main(int argc, char** argv)
     int x;
     int y;
     int z;
+    int crc32;
     int sleep_time;
     void* obj;
     
@@ -31,29 +43,36 @@ int main(int argc, char** argv)
         x = rand() % 100;
         y = rand() % 100;
         error = dspmain_mult(obj, x, y, &cookie[0]);
-        printf("main: dspmain_mult %d x %d y %d z(calc) %d\n", error, x, y, x * y);
+        printf("[%10.10u] main: dspmain_mult %d x %d y %d z(calc) %d\n", get_mstime(), error, x, y, x * y);
 
         x = rand() % 100;
         y = rand() % 100;
         error = dspmain_mult(obj, x, y, &cookie[1]);
-        printf("main: dspmain_mult %d x %d y %d z(calc) %d\n", error, x, y, x * y);
+        printf("[%10.10u] main: dspmain_mult %d x %d y %d z(calc) %d\n", get_mstime(), error, x, y, x * y);
 
         x = rand() % 100;
         y = rand() % 100;
         error = dspmain_mult(obj, x, y, &cookie[2]);
-        printf("main: dspmain_mult %d x %d y %d z(calc) %d\n", error, x, y, x * y);
+        printf("[%10.10u] main: dspmain_mult %d x %d y %d z(calc) %d\n", get_mstime(), error, x, y, x * y);
 
         error = dspmain_flush(obj);
-        printf("main: dspmain_flush %d\n", error);
+        printf("[%10.10u] main: dspmain_flush %d\n", get_mstime(), error);
 
         error = dspmain_mult_result(obj, cookie[0], &z);
-        printf("main: dspmain_mult_result %d z %d\n", error, z);
+        printf("[%10.10u] main: dspmain_mult_result %d z %d\n", get_mstime(), error, z);
 
         error = dspmain_mult_result(obj, cookie[1], &z);
-        printf("main: dspmain_mult_result %d z %d\n", error, z);
+        printf("[%10.10u] main: dspmain_mult_result %d z %d\n", get_mstime(), error, z);
 
         error = dspmain_mult_result(obj, cookie[2], &z);
-        printf("main: dspmain_mult_result %d z %d\n", error, z);
+        printf("[%10.10u] main: dspmain_mult_result %d z %d\n", get_mstime(), error, z);
+
+        error = dspmain_crc32(obj, 0x10f10000, 0, 128, 128, 128, &cookie[0]);
+        //error = dspmain_crc32(obj, 0x94200000, 0, 128, 128, 128, &cookie[0]);
+        printf("[%10.10u] main: dspmain_crc32 %d\n", get_mstime(), error);
+
+        error = dspmain_crc32_result(obj, cookie[0], &crc32);
+        printf("[%10.10u] main: dspmain_mult_result %d crc32 0x%8.8x\n", get_mstime(), error, crc32);
 
         if (sleep_time > 0)
         {

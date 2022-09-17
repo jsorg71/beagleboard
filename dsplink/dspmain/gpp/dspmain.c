@@ -54,7 +54,11 @@ logln(int log_level, const char* format, ...)
 
     if (log_level < g_log_level)
     {
-        log_line = (char*)malloc(2048);
+        log_line = xnew(char, 2048);
+        if (log_line == NULL)
+        {
+            return 1;
+        }
         va_start(ap, format);
         vsnprintf(log_line, 1024, format, ap);
         va_end(ap);
@@ -190,12 +194,56 @@ send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
 }
 
 /*****************************************************************************/
+DSP_STATUS
+send_crc32_msg(struct dspmain_t* dspmain, int* user, int num_user,
+               int addr, int format, int width, int height,
+               int stride_bytes, int crc32)
+{
+    DSP_STATUS status;
+    MSGQ_Msg msg;
+    struct my_msg_crc32_t* my_msg_crc32;
+    int index;
+
+    status = MSGQ_alloc(dspmain->pool_id, sizeof(struct my_msg_crc32_t), &msg);
+    if (DSP_SUCCEEDED(status))
+    {
+        my_msg_crc32 = (struct my_msg_crc32_t*)msg;
+        my_msg_crc32->subid = CRC32MSGSUBID;
+        my_msg_crc32->sequence = dspmain->sequence++;
+        my_msg_crc32->reply_msgq = dspmain->reply_msgq;
+        for (index = 0; index < MSGQ_MYMSGID_NUM_USER; index++)
+        {
+            my_msg_crc32->user[index] = index < num_user ? user[index] : 0;
+        }
+        my_msg_crc32->addr = addr;
+        my_msg_crc32->format = format;
+        my_msg_crc32->width = width;
+        my_msg_crc32->height = height;
+        my_msg_crc32->stride_bytes = stride_bytes;
+        my_msg_crc32->crc32 = crc32;
+        MSGQ_setMsgId(msg, MSGQ_MYMSGID);
+        MSGQ_setSrcQueue(msg, dspmain->gpp_msgq);
+        status = MSGQ_put(dspmain->dsp_msgq, msg);
+        if (DSP_SUCCEEDED(status))
+        {
+            dspmain->processing_count++;
+        }
+        else
+        {
+            MSGQ_free(msg);
+        }
+    }
+    return status;
+}
+
+/*****************************************************************************/
 static DSP_STATUS
 process_mymsg(struct dspmain_t* dspmain, struct my_msg_t* my_msg)
 {
     DSP_STATUS status;
     struct my_msg_get_reply_msgq_t* my_msg_get_reply_msgq;
     struct my_msg_mult_t* my_msg_mult;
+    struct my_msg_crc32_t* my_msg_crc32;
     struct dspmain_peer_t* peer;
 
     peer = dspmain->peer_head;
@@ -222,6 +270,14 @@ process_mymsg(struct dspmain_t* dspmain, struct my_msg_t* my_msg)
             if (peer != NULL)
             {
                 dspmain_queue_mult(dspmain, peer, my_msg_mult);
+            }
+            break;
+        case CRC32MSGSUBID:
+            my_msg_crc32 = (struct my_msg_crc32_t*)my_msg;
+            LOGLND((LOG_INFO, LOGS "CRC32MSGSUBID z %d", LOGP, my_msg_crc32->crc32));
+            if (peer != NULL)
+            {
+                dspmain_queue_crc32(dspmain, peer, my_msg_crc32);
             }
             break;
     }
@@ -275,9 +331,10 @@ dspmain_wait_fds(struct dspmain_t* dspmain,
     {
         max_fd = g_term_pipe[0];
     }
-    if (dspmain_peer_get_fds(dspmain, &max_fd, rfds, wfds) != DSP_ERROR_NONE)
+    error = dspmain_peer_get_fds(dspmain, &max_fd, rfds, wfds);
+    if (error != DSP_ERROR_NONE)
     {
-        LOGLN((LOG_ERROR, LOGS "dspmain_peer_get_fds failed", LOGP));
+        LOGLN((LOG_ERROR, LOGS "dspmain_peer_get_fds error %d", LOGP, error));
     }
     if (timeout == -1)
     {
@@ -297,6 +354,7 @@ dspmain_wait_fds(struct dspmain_t* dspmain,
 static void
 dspmain_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
 {
+    int error;
     int sck;
     socklen_t sock_len;
     struct sockaddr_un s;
@@ -320,7 +378,11 @@ dspmain_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
             }
         }
     }
-    dspmain_peer_check_fds(dspmain, rfds, wfds);
+    error = dspmain_peer_check_fds(dspmain, rfds, wfds);
+    if ((error != DSP_ERROR_NONE) && (error != DSP_ERROR_PEER_REMOVED))
+    {
+        LOGLN((LOG_ERROR, LOGS "dspmain_peer_check_fds error %d", LOGP, error));
+    }
 }
 
 /*****************************************************************************/
@@ -338,7 +400,11 @@ dspmain_loop(struct dspmain_t* dspmain)
     {
         while (dspmain->reply_msgq == 0)
         {
-            dspmain_process_one_msgq(dspmain, WAIT_FOREVER);
+            status = dspmain_process_one_msgq(dspmain, WAIT_FOREVER);
+            if (DSP_FAILED(status))
+            {
+                return status;
+            }
         }
         LOGLN((LOG_INFO, LOGS "got reply_msgq 0x%x",
                LOGP, dspmain->reply_msgq));
@@ -384,8 +450,8 @@ dspmain_started(struct dspmain_t* dspmain)
         dspmain->dsp_msgq = MSGQ_INVALIDMSGQ;
         status = MSGQ_locate("DSPMSGQ0", &(dspmain->dsp_msgq),
                              &syncLocateAttrs);
-        LOGLN((LOG_INFO, LOGS "MSGQ_locate status 0x%8.8lx name DSPMSGQ0",
-               LOGP, status));
+        LOGLN((LOG_INFO, LOGS "MSGQ_locate status 0x%8.8lx timeout 0x%8.8x "
+               "name DSPMSGQ0", LOGP, status, syncLocateAttrs.timeout));
         if (DSP_SUCCEEDED(status))
         {
             status = dspmain_loop(dspmain);
@@ -409,8 +475,8 @@ dspmain_loaded(struct dspmain_t* dspmain)
     Uint32 numBufs[1];
 
     memset(&poolAttrs, 0, sizeof(poolAttrs));
-    size[0] = 512;
-    numBufs[0] = 0xD0000 / size[0];
+    size[0] = MSGQ_MAX_BYTES;
+    numBufs[0] = MSGQ_POOL_BYTES / size[0];
     poolAttrs.bufSizes = size;
     poolAttrs.numBuffers = numBufs;
     poolAttrs.numBufPools = 1;
@@ -441,7 +507,8 @@ dspmain_attached(struct dspmain_t* dspmain)
 {
     DSP_STATUS status;
 
-    sprintf(dspmain->gpp_msgq_name, "GPPMSGQ%d", getpid());
+    snprintf(dspmain->gpp_msgq_name, sizeof(dspmain->gpp_msgq_name),
+             "GPPMSGQ%d", getpid());
     dspmain->gpp_msgq = MSGQ_INVALIDMSGQ;
     status = MSGQ_open(dspmain->gpp_msgq_name, &(dspmain->gpp_msgq), NULL);
     LOGLN((LOG_INFO, LOGS "MSGQ_open status 0x%8.8lx name %s", LOGP,

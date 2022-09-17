@@ -38,6 +38,10 @@ logln(int log_level, const char* format, ...);
 DSP_STATUS
 send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
               int x, int y, int z);
+DSP_STATUS
+send_crc32_msg(struct dspmain_t* dspmain, int* user, int num_user,
+               int addr, int format, int width, int height,
+               int stride_bytes, int crc32);
 
 #define LOG_ERROR 0
 #define LOG_WARN  1

@@ -1,4 +1,6 @@
 
+#define MSGQ_MAX_BYTES 512
+#define MSGQ_POOL_BYTES 0xD0000
 #define MSGQ_MYMSGID 10
 #define MSGQ_MYMSGID_NUM_USER 4
 
@@ -28,4 +30,16 @@ struct my_msg_mult_t
     int x;
     int y;
     int z;
+};
+
+#define CRC32MSGSUBID 2
+struct my_msg_crc32_t
+{
+    MYMSGHEADER
+    int addr;
+    int format;
+    int width;
+    int height;
+    int stride_bytes;
+    int crc32;
 };
