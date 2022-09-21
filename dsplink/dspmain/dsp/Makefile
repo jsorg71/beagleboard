@@ -10,7 +10,7 @@ dsplinkmqt.obj dsplinkmsgq.obj zcpy_mqt.obj \
 dsplinkdata.obj zcpy_data.obj \
 notify.obj _notify.obj \
 ringio.obj _ringio.obj \
-dspmain.obj dspmain_edma.obj \
+dspmain.obj dspmain_edma.obj dspmain_mqt_sma.obj \
 dspmaincfg.obj dspmaincfg_c.obj \
 bios_edma3_drv_sample_cs.obj \
 bios_edma3_drv_sample_omap35xx_cfg.obj \

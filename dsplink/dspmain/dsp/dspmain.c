@@ -6,90 +6,20 @@
 //sudo ./memdump 2485125120 4
 
 #include <std.h>
-#include <sys.h>
-#include <sem.h>
-#include <log.h>
 #include <tsk.h>
 #include <msgq.h>
-#include <pool.h>
-
 #include <dsplink.h>
-#include <failure.h>
-#include <sma_pool.h>
-#include <zcpy_mqt.h>
+#include <bcache.h>
 
-#include <ti/sdo/edma3/drv/edma3_drv.h>
 #include <ti/sdo/edma3/drv/sample/bios_edma3_drv_sample.h>
 
+#include "dspmain.h"
 #include "dspmain_msg.h"
 #include "dspmain_edma.h"
 
-#define NUM_POOLS 1
-#define NUM_MSG_QUEUES 1
-#define MAX_PROCESSORS 2
-
-#define DSP_MSGQNAME "DSPMSGQ0"
-#define POOL_ID 0
-
-static ZCPYMQT_Params mqtParams =
-{
-    POOL_ID
-};
-
-static MSGQ_Obj msgQueues[NUM_MSG_QUEUES] = { 0 };
-
-static MSGQ_TransportObj transports[MAX_PROCESSORS] =
-{
-    MSGQ_NOTRANSPORT,
-    {
-        &ZCPYMQT_init,  /* Init Function                 */
-        &ZCPYMQT_FXNS,  /* Transport interface functions */
-        &mqtParams,     /* Transport params              */
-        NULL,           /* Filled in by transport        */
-        ID_GPP          /* Processor Id                  */
-    }
-};
-
-/* can not be static */
-MSGQ_Config MSGQ_config =
-{
-    msgQueues,
-    transports,
-    NUM_MSG_QUEUES,
-    MAX_PROCESSORS,
-    0,
-    MSGQ_INVALIDMSGQ,
-    POOL_INVALIDID
-};
-
-static SMAPOOL_Params PoolParams[NUM_POOLS] =
-{
-    {
-        0,                 /* Pool ID */
-        FALSE              /* Exact Match Requirement */
-    }
-};
-
-static POOL_Obj pools[NUM_POOLS] =
-{
-    {
-        &SMAPOOL_init,             /* Init Function                      */
-        (POOL_Fxns*)&SMAPOOL_FXNS, /* Pool interface functions           */
-        PoolParams + 0,            /* Pool params                        */
-        NULL                       /* Pool object: Set within pool impl. */
-    }
-};
-
-/* can not be static */
-POOL_Config POOL_config =
-{
-    pools,
-    NUM_POOLS
-};
-
 static MSGQ_Queue g_dsp_msgq = MSGQ_INVALIDMSGQ;
-
-static SEM_Obj g_notifySemObj = { 0 };
+static SEM_Obj g_notifySemObj; /* initalized in dspmain_tsk() */
+SEM_Obj g_edmaSemObj;
 
 /*****************************************************************************/
 static void
@@ -176,7 +106,7 @@ process_MSGQ_ASYNCLOCATEMSGID(MSGQ_Msg msg)
 
 /*****************************************************************************/
 static int
-my_tsk(void)
+dspmain_tsk(void)
 {
     MSGQ_Msg msg;
     MSGQ_Attrs msgqAttrs;
@@ -196,6 +126,7 @@ my_tsk(void)
     status = SYS_OK;
     while ((status == SYS_OK) || (status == SYS_ETIMEOUT))
     {
+        BCACHE_wbAll();
         status = MSGQ_get(g_dsp_msgq, &msg, SYS_FOREVER);
         if (status == SYS_OK)
         {
@@ -221,5 +152,7 @@ void
 main(int argc, char** argv)
 {
     DSPLINK_init();
-    TSK_create(my_tsk, NULL, 0);
+    SEM_new(&g_edmaSemObj, 0);
+    edma3init();
+    TSK_create(dspmain_tsk, NULL, 0);
 }
