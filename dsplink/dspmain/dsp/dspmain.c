@@ -11,15 +11,14 @@
 #include <dsplink.h>
 #include <bcache.h>
 
-#include <ti/sdo/edma3/drv/sample/bios_edma3_drv_sample.h>
-
 #include "dspmain.h"
 #include "dspmain_msg.h"
+#include "dspmain_crc32.h"
 #include "dspmain_edma.h"
 
 static MSGQ_Queue g_dsp_msgq = MSGQ_INVALIDMSGQ;
 static SEM_Obj g_notifySemObj; /* initalized in dspmain_tsk() */
-SEM_Obj g_edmaSemObj;
+static int g_shutdown = 0;
 
 /*****************************************************************************/
 static void
@@ -64,6 +63,9 @@ process_MSGQ_MYMSGID(MSGQ_Msg msg)
             break;
         case CRC32MSGSUBID:
             process_CRC32MSGSUBID(my_msg);
+            break;
+        case SHUTDOWNMSGSUBID:
+            g_shutdown = 1;
             break;
     }
     if (my_msg->reply_msgq != 0)
@@ -126,7 +128,6 @@ dspmain_tsk(void)
     status = SYS_OK;
     while ((status == SYS_OK) || (status == SYS_ETIMEOUT))
     {
-        BCACHE_wbAll();
         status = MSGQ_get(g_dsp_msgq, &msg, SYS_FOREVER);
         if (status == SYS_OK)
         {
@@ -143,6 +144,10 @@ dspmain_tsk(void)
                     break;
             }
         }
+        if (g_shutdown)
+        {
+            break;
+        }
     }
     return 0;
 }
@@ -152,7 +157,6 @@ void
 main(int argc, char** argv)
 {
     DSPLINK_init();
-    SEM_new(&g_edmaSemObj, 0);
-    edma3init();
+    dma_init();
     TSK_create(dspmain_tsk, NULL, 0);
 }

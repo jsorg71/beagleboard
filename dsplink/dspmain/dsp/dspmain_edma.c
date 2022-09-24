@@ -1,28 +1,43 @@
 
 #include <std.h>
-#include <msgq.h>
 #include <sem.h>
 
+#include <ti/sdo/edma3/drv/sample/bios_edma3_drv_sample.h>
 #include <ti/sdo/edma3/drv/edma3_drv.h>
 
-#include "dspmain_msg.h"
+#include "dspmain_edma.h"
 
 extern EDMA3_DRV_Handle hEdma; /* in bios_edma3_drv_sample_init.c */
 
-extern SEM_Obj g_edmaSemObj; /* in dspmain.c */
-
+static SEM_Obj g_edmaSemObj;
 static volatile short g_irqRaised1 = 0;
 
 /* OPT Field specific defines */
-#define OPT_SYNCDIM_SHIFT                   (0x00000002u)
-#define OPT_TCC_MASK                        (0x0003F000u)
-#define OPT_TCC_SHIFT                       (0x0000000Cu)
-#define OPT_ITCINTEN_SHIFT                  (0x00000015u)
-#define OPT_TCINTEN_SHIFT                   (0x00000014u)
+#define OPT_SYNCDIM_SHIFT   0x00000002u
+#define OPT_TCC_MASK        0x0003F000u
+#define OPT_TCC_SHIFT       0x0000000Cu
+#define OPT_ITCINTEN_SHIFT  0x00000015u
+#define OPT_TCINTEN_SHIFT   0x00000014u
 
-#define L1DBUFSIZE (15 * 1024)
-#define L1DBUF1 (0x10f10000 + 1 * 1024)
-#define L1DBUF2 (0x10f10000 + 16 * 1024)
+#define MINMAX(_val, _lo, _hi) \
+    (_val) < (_lo) ? (_lo) : (_val) > (_hi) ? (_hi) : (_val)
+
+#define MY_SET_PARAM_SRC(_src) \
+    param_handle->SRC = _src
+
+#define MY_SET_PARAM_AB(_acnt, _bcnt) \
+    param_handle->A_B_CNT = ((_bcnt) << 16) | (_acnt)
+
+#define DMA_START(_chid) \
+    EDMA3_DRV_enableTransfer(hEdma, _chid, EDMA3_DRV_TRIG_MODE_MANUAL)
+
+#define DMA_WAIT(_chid) \
+    SEM_pend(&g_edmaSemObj, SYS_FOREVER); \
+    if (g_irqRaised1 < 0) \
+    { \
+        EDMA3_DRV_clearErrorBits(hEdma, _chid); \
+    } \
+    g_irqRaised1 = 0
 
 /*****************************************************************************/
 /* Callback function 1 */
@@ -93,7 +108,8 @@ request_channels(unsigned int* chids, unsigned int* tcc)
 
 /*****************************************************************************/
 static EDMA3_DRV_Result
-set_param_link(unsigned int src_addr, unsigned int width,
+set_param_link(unsigned int ping_addr, unsigned int pong_addr,
+               int src_stride, int dst_stride,
                unsigned int* chids, unsigned int tcc,
                EDMA3_DRV_ParamentryRegs **param_handle)
 {
@@ -101,23 +117,21 @@ set_param_link(unsigned int src_addr, unsigned int width,
     EDMA3_DRV_PaRAMRegs paramSet;
     unsigned int phyaddress;
 
-    paramSet.srcAddr    = src_addr;
-    paramSet.destAddr   = L1DBUF1;
-    paramSet.srcBIdx    = 0;
-    paramSet.destBIdx   = 0;
+    paramSet.srcAddr    = 0; /* set later */
+    paramSet.destAddr   = ping_addr;
+    paramSet.srcBIdx    = src_stride;
+    paramSet.destBIdx   = dst_stride;
     paramSet.srcCIdx    = 0;
     paramSet.destCIdx   = 0;
-    paramSet.aCnt       = width;
-    paramSet.bCnt       = 1;
+    paramSet.aCnt       = 0; /* set later */
+    paramSet.bCnt       = 0; /* set later */
     paramSet.cCnt       = 1;
     paramSet.bCntReload = 0;
     paramSet.linkAddr   = 0xFFFFu;
     paramSet.opt        = 0;
-    paramSet.opt       &= 0xFFFFFFFCu;
-    paramSet.opt       |= ((tcc << OPT_TCC_SHIFT) & OPT_TCC_MASK);
-    paramSet.opt       |= (1 << OPT_ITCINTEN_SHIFT);
-    paramSet.opt       |= (1 << OPT_TCINTEN_SHIFT);
-    paramSet.opt       &= 0xFFFFFFFBu;
+    paramSet.opt        |= ((tcc << OPT_TCC_SHIFT) & OPT_TCC_MASK);
+    paramSet.opt        |= (1 << OPT_TCINTEN_SHIFT);
+    paramSet.opt        |= (1 << OPT_SYNCDIM_SHIFT);
     result = EDMA3_DRV_setPaRAM(hEdma, chids[0], &paramSet);
     if (result != EDMA3_DRV_SOK)
     {
@@ -128,7 +142,7 @@ set_param_link(unsigned int src_addr, unsigned int width,
     {
         return result;
     }
-    paramSet.destAddr   = L1DBUF2;
+    paramSet.destAddr   = pong_addr;
     result = EDMA3_DRV_setPaRAM(hEdma, chids[2], &paramSet);
     if (result != EDMA3_DRV_SOK)
     {
@@ -160,171 +174,145 @@ set_param_link(unsigned int src_addr, unsigned int width,
 }
 
 /*****************************************************************************/
-static EDMA3_DRV_Result
-start_edma(unsigned int chid)
-{
-    return EDMA3_DRV_enableTransfer(hEdma, chid, EDMA3_DRV_TRIG_MODE_MANUAL);
-}
-
-/*****************************************************************************/
-static void
-wait_edma(unsigned int chid)
-{
-    SEM_pend(&g_edmaSemObj, SYS_FOREVER);
-    if (g_irqRaised1 < 0)
-    {
-        EDMA3_DRV_clearErrorBits(hEdma, chid);
-    }
-    g_irqRaised1 = 0;
-}
-
-/*****************************************************************************/
-static void
-gen_table(void)
-{
-    unsigned int* tab_ptr;
-    unsigned int remainder;
-    unsigned char b;
-    unsigned int bit;
-
-    b = 0;
-    tab_ptr = (unsigned int*)0x10f10000;
-    do
-    {
-        remainder = b;
-        for (bit = 8; bit > 0; --bit)
-        {
-            if (remainder & 1)
-            {
-                remainder = (remainder >> 1) ^ 0xEDB88320;
-            }
-            else
-            {
-                remainder = (remainder >> 1);
-            }
-        }
-        tab_ptr[b] = remainder;
-    } while (0 != ++b);
-}
-
-/*****************************************************************************/
-static unsigned int
-crc_update(unsigned int crc, unsigned int addr, size_t bytes)
-{
-    unsigned char* data;
-    unsigned char* end;
-    unsigned int* tab_ptr;
-
-    tab_ptr = (unsigned int*)0x10f10000;
-    data = (unsigned char*)addr;
-    end = data + bytes;
-    while (data < end)
-    {
-        crc = tab_ptr[*(data++) ^ (crc & 0xff)] ^ (crc >> 8);
-    }
-    return crc;
-}
-
-/*****************************************************************************/
 void
-process_CRC32MSGSUBID(struct my_msg_t* my_msg)
+process_dma_in(struct dma_in_info* dii)
 {
-    struct my_msg_crc32_t* my_msg_crc32;
     EDMA3_DRV_ParamentryRegs *param_handle;
     EDMA3_DRV_Result result;
     unsigned int chids[3];
     unsigned int tcc;
     unsigned int src;
-    int width;
     int height;
     int stride_bytes;
-    Uns crc;
+    int rows_per_dma;
+    int bytes_in_ping;
+    int bytes_in_pong;
+    int row_bytes;
 
-    my_msg_crc32 = (struct my_msg_crc32_t*)my_msg;
-    crc = ~0;
-    if ((my_msg_crc32->width < 1) || (my_msg_crc32->height < 1) ||
-        (my_msg_crc32->width > L1DBUFSIZE))
-    {
-        my_msg_crc32->crc32 = crc;
-        return;
-    }
     result = request_channels(chids, &tcc);
     if (result == EDMA3_DRV_SOK)
     {
-        stride_bytes = my_msg_crc32->stride_bytes;
-        width = my_msg_crc32->width;
-        height = my_msg_crc32->height;
-        src = my_msg_crc32->addr;
+        stride_bytes = dii->stride_bytes;
+        height = dii->height;
+        src = dii->src_addr;
+        row_bytes = dii->width * dii->bytes_per_pixel;
+        rows_per_dma = dii->ping_pong_bytes / row_bytes;
+        rows_per_dma = MINMAX(rows_per_dma, 1, height);
         param_handle = NULL;
-        result = set_param_link(src, width, chids, tcc, &param_handle);
+        result = set_param_link(dii->ping_addr, dii->pong_addr,
+                                stride_bytes, row_bytes, chids, tcc,
+                                &param_handle);
         if (result == EDMA3_DRV_SOK)
         {
             /* start ping */
-            result = start_edma(chids[0]);
+            bytes_in_ping = row_bytes * rows_per_dma;
+            MY_SET_PARAM_SRC(src);
+            MY_SET_PARAM_AB(row_bytes, rows_per_dma);
+            result = DMA_START(chids[0]);
             if (result == EDMA3_DRV_SOK)
             {
-                /* use this free time to generate crc table */
-                gen_table();
+                /* use this free time to setup */
+                dii->setup(dii);
                 /* wait for ping */
-                wait_edma(chids[0]);
+                DMA_WAIT(chids[0]);
             }
-            src += stride_bytes;
-            height--;
+            src += stride_bytes * rows_per_dma;
+            height -= rows_per_dma;
             if (height < 1)
             {
                 /* process ping */
-                crc = crc_update(crc, L1DBUF1, width);
+                dii->process(dii, dii->ping_addr, bytes_in_ping);
             }
             else
             {
-                while (height > 1)
+                while (height >= rows_per_dma * 2)
                 {
                     /* start pong */
-                    param_handle->SRC = src;
-                    result = start_edma(chids[0]);
+                    bytes_in_pong = row_bytes * rows_per_dma;
+                    MY_SET_PARAM_SRC(src);
+                    MY_SET_PARAM_AB(row_bytes, rows_per_dma);
+                    result = DMA_START(chids[0]);
                     if (result == EDMA3_DRV_SOK)
                     {
                         /* process ping */
-                        crc = crc_update(crc, L1DBUF1, width);
+                        dii->process(dii, dii->ping_addr, bytes_in_ping);
                         /* wait for pong */
-                        wait_edma(chids[0]);
+                        DMA_WAIT(chids[0]);
                     }
-                    src += stride_bytes;
-                    height--;
+                    src += stride_bytes * rows_per_dma;
+                    height -= rows_per_dma;
                     /* start ping */
-                    param_handle->SRC = src;
-                    result = start_edma(chids[0]);
+                    bytes_in_ping = row_bytes * rows_per_dma;
+                    MY_SET_PARAM_SRC(src);
+                    MY_SET_PARAM_AB(row_bytes, rows_per_dma);
+                    result = DMA_START(chids[0]);
                     if (result == EDMA3_DRV_SOK)
                     {
                         /* process pong */
-                        crc = crc_update(crc, L1DBUF2, width);
+                        dii->process(dii, dii->pong_addr, bytes_in_pong);
                         /* wait for ping */
-                        wait_edma(chids[0]);
+                        DMA_WAIT(chids[0]);
                     }
-                    src += stride_bytes;
-                    height--;
+                    src += stride_bytes * rows_per_dma;
+                    height -= rows_per_dma;
+                }
+                if (height > rows_per_dma)
+                {
+                    /* start pong */
+                    rows_per_dma = height / 2;
+                    bytes_in_pong = row_bytes * rows_per_dma;
+                    MY_SET_PARAM_SRC(src);
+                    MY_SET_PARAM_AB(row_bytes, rows_per_dma);
+                    result = DMA_START(chids[0]);
+                    if (result == EDMA3_DRV_SOK)
+                    {
+                        /* process ping */
+                        dii->process(dii, dii->ping_addr, bytes_in_ping);
+                        /* wait for pong */
+                        DMA_WAIT(chids[0]);
+                    }
+                    src += stride_bytes * rows_per_dma;
+                    height -= rows_per_dma;
+                    /* start ping */
+                    rows_per_dma = height;
+                    bytes_in_ping = row_bytes * rows_per_dma;
+                    MY_SET_PARAM_SRC(src);
+                    MY_SET_PARAM_AB(row_bytes, rows_per_dma);
+                    result = DMA_START(chids[0]);
+                    if (result == EDMA3_DRV_SOK)
+                    {
+                        /* process pong */
+                        dii->process(dii, dii->pong_addr, bytes_in_pong);
+                        /* wait for ping */
+                        DMA_WAIT(chids[0]);
+                    }
+                    src += stride_bytes * rows_per_dma;
+                    height -= rows_per_dma;
                 }
                 if (height > 0)
                 {
                     /* start pong */
-                    param_handle->SRC = src;
-                    result = start_edma(chids[0]);
+                    rows_per_dma = height;
+                    bytes_in_pong = row_bytes * rows_per_dma;
+                    MY_SET_PARAM_SRC(src);
+                    MY_SET_PARAM_AB(row_bytes, rows_per_dma);
+                    result = DMA_START(chids[0]);
                     if (result == EDMA3_DRV_SOK)
                     {
                         /* process ping */
-                        crc = crc_update(crc, L1DBUF1, width);
+                        dii->process(dii, dii->ping_addr, bytes_in_ping);
                         /* wait for pong */
-                        wait_edma(chids[0]);
+                        DMA_WAIT(chids[0]);
                     }
-                    src += stride_bytes;
-                    height--;
+                    src += stride_bytes * rows_per_dma;
+                    height -= rows_per_dma;
                     /* process pong */
-                    crc = crc_update(crc, L1DBUF2, width);
+                    dii->process(dii, dii->pong_addr, bytes_in_pong);
                 }
                 else
                 {
                     /* process ping */
-                    crc = crc_update(crc, L1DBUF1, width);
+                    dii->process(dii, dii->ping_addr, bytes_in_ping);
                 }
             }
         }
@@ -332,5 +320,12 @@ process_CRC32MSGSUBID(struct my_msg_t* my_msg)
         EDMA3_DRV_freeChannel(hEdma, chids[1]);
         EDMA3_DRV_freeChannel(hEdma, chids[0]);
     }
-    my_msg_crc32->crc32 = ~crc;
+}
+
+/*****************************************************************************/
+void
+dma_init(void)
+{
+    SEM_new(&g_edmaSemObj, 0);
+    edma3init();
 }

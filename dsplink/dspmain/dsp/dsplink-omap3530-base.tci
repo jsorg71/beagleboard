@@ -90,7 +90,7 @@ prog.module("GBL").C64PLUSL1PCFG       = "16k";
    prog.module("GBL").C64PLUSMAR128to159  = 0xFFF00000 ;
    prog.module("GBL").C64PLUSMAR128to159  = 0x00000000 ; */
 
-prog.module("GBL").C64PLUSMAR128to159  = 0xFFF00000;
+prog.module("GBL").C64PLUSMAR128to159  = 0x00000000;
 
 var IRAM = prog.module("MEM").instance("IRAM");
 IRAM.len              = IRAM.len - 0x8000;
