@@ -59,21 +59,24 @@ dspmain_peer_remove_one(struct dspmain_t* dspmain,
 
     peer = *apeer;
     LOGLN((LOG_INFO, LOGS "sck %d", LOGP, peer->sck));
-    if ((dspmain->peer_head == peer) && (dspmain->peer_tail == peer))
+    if (dspmain->peer_head == peer)
     {
-        /* remove only item */
-        dspmain->peer_head = NULL;
-        dspmain->peer_tail = NULL;
-        dspmain_peer_delete_one(peer);
-        peer = NULL;
-    }
-    else if (dspmain->peer_head == peer)
-    {
-        /* remove first item */
-        dspmain->peer_head = peer->next;
-        next_peer = peer->next;
-        dspmain_peer_delete_one(peer);
-        peer = next_peer;
+        if (dspmain->peer_tail == peer)
+        {
+            /* remove only item */
+            dspmain->peer_head = NULL;
+            dspmain->peer_tail = NULL;
+            dspmain_peer_delete_one(peer);
+            peer = NULL;
+        }
+        else
+        {
+            /* remove first item */
+            dspmain->peer_head = peer->next;
+            next_peer = peer->next;
+            dspmain_peer_delete_one(peer);
+            peer = next_peer;
+        }
     }
     else if (dspmain->peer_tail == peer)
     {
@@ -109,7 +112,7 @@ dspmain_queue_mult(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
     {
         return DSP_ERROR_MEMORY;
     }
-    out_s->data = xnew(char, 24);
+    out_s->data = xnew(char, 16);
     if (out_s->data == NULL)
     {
         free(out_s);
@@ -117,10 +120,8 @@ dspmain_queue_mult(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
     }
     out_s->p = out_s->data;
     out_uint32_le(out_s, MULTMSGSUBID);
-    out_uint32_le(out_s, 24);
+    out_uint32_le(out_s, 16);
     out_uint32_le(out_s, my_msg_mult->user[1]); /* sequence */
-    out_uint32_le(out_s, my_msg_mult->x);
-    out_uint32_le(out_s, my_msg_mult->y);
     out_uint32_le(out_s, my_msg_mult->z);
     out_s->end = out_s->p;
     out_s->p = out_s->data;
@@ -142,7 +143,7 @@ dspmain_queue_crc32(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
     {
         return DSP_ERROR_MEMORY;
     }
-    out_s->data = xnew(char, 36);
+    out_s->data = xnew(char, 16);
     if (out_s->data == NULL)
     {
         free(out_s);
@@ -150,13 +151,8 @@ dspmain_queue_crc32(struct dspmain_t* dspmain, struct dspmain_peer_t* peer,
     }
     out_s->p = out_s->data;
     out_uint32_le(out_s, CRC32MSGSUBID);
-    out_uint32_le(out_s, 36);
+    out_uint32_le(out_s, 16);
     out_uint32_le(out_s, my_msg_crc32->user[1]); /* sequence */
-    out_uint32_le(out_s, my_msg_crc32->addr);
-    out_uint32_le(out_s, my_msg_crc32->format);
-    out_uint32_le(out_s, my_msg_crc32->width);
-    out_uint32_le(out_s, my_msg_crc32->height);
-    out_uint32_le(out_s, my_msg_crc32->stride_bytes);
     out_uint32_le(out_s, my_msg_crc32->crc32);
     out_s->end = out_s->p;
     out_s->p = out_s->data;
@@ -172,11 +168,10 @@ dspmain_peer_process_msg_mult(struct dspmain_t* dspmain,
 {
     int x;
     int y;
-    int z;
     int user[2];
     DSP_STATUS status;
 
-    if (!s_check_rem(in_s, 16))
+    if (!s_check_rem(in_s, 12))
     {
         return DSP_ERROR_RANGE;
     }
@@ -184,8 +179,7 @@ dspmain_peer_process_msg_mult(struct dspmain_t* dspmain,
     in_uint32_le(in_s, user[1]); /* sequence */
     in_uint32_le(in_s, x);
     in_uint32_le(in_s, y);
-    in_uint32_le(in_s, z);
-    status = send_mult_msg(dspmain, user, 2, x, y, z);
+    status = send_mult_msg(dspmain, user, 2, x, y);
     if (DSP_FAILED(status))
     {
         return DSP_ERROR_PARAM;
@@ -204,11 +198,10 @@ dspmain_peer_process_msg_crc32(struct dspmain_t* dspmain,
     int width;
     int height;
     int stride_bytes;
-    int crc32;
     int user[2];
     DSP_STATUS status;
 
-    if (!s_check_rem(in_s, 28))
+    if (!s_check_rem(in_s, 24))
     {
         return DSP_ERROR_RANGE;
     }
@@ -219,9 +212,8 @@ dspmain_peer_process_msg_crc32(struct dspmain_t* dspmain,
     in_uint32_le(in_s, width);
     in_uint32_le(in_s, height);
     in_uint32_le(in_s, stride_bytes);
-    in_uint32_le(in_s, crc32);
     status = send_crc32_msg(dspmain, user, 2, addr, format, width, height,
-                            stride_bytes, crc32);
+                            stride_bytes);
     if (DSP_FAILED(status))
     {
         return DSP_ERROR_PARAM;

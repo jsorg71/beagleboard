@@ -2,6 +2,8 @@
 DVSDKPATH=/opt/dvsdk
 #DSPLINKPATH=$(DVSDKPATH)/dsplink_1_65_01_05_eng
 DSPLINKPATH=$(DVSDKPATH)/dsplink-1_65_02
+#LINUXUTILSPATH=$(DVSDKPATH)/linuxutils_2_26_02_05
+LINUXUTILSPATH=/home/jay/git/ti/ipc-ludev
 
 CC=/usr/bin/arm-linux-gnueabihf-gcc
 STRIP=/usr/bin/arm-linux-gnueabihf-strip
@@ -33,4 +35,10 @@ dsptest: dsptest.o
 	$(CC) -o dsptest $(LDFLAGS) dsptest.o $(LIBS)
 
 dsptestsck: dsptestsck.o libdspmain.o
-	$(CC) -o dsptestsck $(LDFLAGS) dsptestsck.o libdspmain.o $(LIBS)
+	$(CC) -o dsptestsck dsptestsck.o libdspmain.o ../../../linuxutils/libticmem/libticmem.a
+
+dsptestsck.o: dsptestsck.c
+	$(CC) -c -O2 -fPIC -Wall -I$(LINUXUTILSPATH)/include dsptestsck.c
+
+libdspmain.o: libdspmain.c
+	$(CC) -c -O2 -fPIC -Wall libdspmain.c

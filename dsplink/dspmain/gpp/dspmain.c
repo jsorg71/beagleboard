@@ -107,6 +107,41 @@ send_get_reply_msgq_msg(struct dspmain_t* dspmain, const char* msgq_name)
     return status;
 }
 
+/*****************************************************************************/
+static DSP_STATUS
+send_shutdown_msg(struct dspmain_t* dspmain, const char* msgq_name)
+{
+    DSP_STATUS status;
+    MSGQ_Msg msg;
+    struct my_msg_shutdown_t* my_msg_shutdown;
+    int index;
+
+    status = MSGQ_alloc(dspmain->pool_id,
+                        sizeof(struct my_msg_shutdown_t), &msg);
+    if (DSP_SUCCEEDED(status))
+    {
+        my_msg_shutdown = (struct my_msg_shutdown_t*)msg;
+        my_msg_shutdown->subid = SHUTDOWNMSGSUBID;
+        my_msg_shutdown->sequence = dspmain->sequence++;
+        my_msg_shutdown->reply_msgq = dspmain->reply_msgq;
+        for (index = 0; index < MSGQ_MYMSGID_NUM_USER; index++)
+        {
+            my_msg_shutdown->user[index] = 0;
+        }
+        MSGQ_setMsgId(msg, MSGQ_MYMSGID);
+        MSGQ_setSrcQueue(msg, dspmain->gpp_msgq);
+        status = MSGQ_put(dspmain->dsp_msgq, msg);
+        if (DSP_SUCCEEDED(status))
+        {
+        }
+        else
+        {
+            MSGQ_free(msg);
+        }
+    }
+    return status;
+}
+
 #if 0
 /*****************************************************************************/
 /* produce a hex dump */
@@ -156,7 +191,7 @@ hexdump(const void* p, int len)
 /*****************************************************************************/
 DSP_STATUS
 send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
-              int x, int y, int z)
+              int x, int y)
 {
     DSP_STATUS status;
     MSGQ_Msg msg;
@@ -176,7 +211,7 @@ send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
         }
         my_msg_mult->x = x;
         my_msg_mult->y = y;
-        my_msg_mult->z = z;
+        my_msg_mult->z = 0;
         MSGQ_setMsgId(msg, MSGQ_MYMSGID);
         MSGQ_setSrcQueue(msg, dspmain->gpp_msgq);
         status = MSGQ_put(dspmain->dsp_msgq, msg);
@@ -197,7 +232,7 @@ send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
 DSP_STATUS
 send_crc32_msg(struct dspmain_t* dspmain, int* user, int num_user,
                int addr, int format, int width, int height,
-               int stride_bytes, int crc32)
+               int stride_bytes)
 {
     DSP_STATUS status;
     MSGQ_Msg msg;
@@ -220,7 +255,7 @@ send_crc32_msg(struct dspmain_t* dspmain, int* user, int num_user,
         my_msg_crc32->width = width;
         my_msg_crc32->height = height;
         my_msg_crc32->stride_bytes = stride_bytes;
-        my_msg_crc32->crc32 = crc32;
+        my_msg_crc32->crc32 = 0;
         MSGQ_setMsgId(msg, MSGQ_MYMSGID);
         MSGQ_setSrcQueue(msg, dspmain->gpp_msgq);
         status = MSGQ_put(dspmain->dsp_msgq, msg);
@@ -426,6 +461,15 @@ dspmain_loop(struct dspmain_t* dspmain)
                 LOGLND((LOG_INFO, LOGS "calling dspmain_wait_fds", LOGP));
                 dspmain_wait_fds(dspmain, &rfds, &wfds, -1);
             }
+        }
+        status = send_shutdown_msg(dspmain, dspmain->gpp_msgq_name);
+        if (DSP_SUCCEEDED(status))
+        {
+            LOGLN((LOG_INFO, LOGS "send_shutdown_msg succeeded", LOGP));
+        }
+        else
+        {
+            LOGLN((LOG_INFO, LOGS "send_shutdown_msg failed", LOGP));
         }
     }
     return status;

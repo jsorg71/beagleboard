@@ -97,7 +97,7 @@ dspmain_mult(void* obj, int x, int y, int* cookie)
 
     ldsp = (struct libdspmain_t*)obj;
     out_s = &(ldsp->out_s);
-    if (!s_check_rem_out(out_s, 24))
+    if (!s_check_rem_out(out_s, 20))
     {
         error = dspmain_flush(obj);
         if (error != 0)
@@ -106,11 +106,10 @@ dspmain_mult(void* obj, int x, int y, int* cookie)
         }
     }
     out_uint32_le(out_s, 1); /* MULTMSGSUBID */
-    out_uint32_le(out_s, 24);
+    out_uint32_le(out_s, 20);
     out_uint32_le(out_s, ldsp->sequence);
     out_uint32_le(out_s, x);
     out_uint32_le(out_s, y);
-    out_uint32_le(out_s, 0);
     *cookie = ldsp->sequence++;
     return 0;
 }
@@ -145,7 +144,7 @@ dspmain_mult_result(void* obj, int cookie, int* z)
         return 1;
     }
     in_uint32_le(in_s, size);
-    if (size != 24)
+    if (size != 16)
     {
         return 1;
     }
@@ -163,7 +162,6 @@ dspmain_mult_result(void* obj, int cookie, int* z)
     {
         return dspmain_mult_result(obj, cookie, z);
     }
-    in_uint8s(in_s, 8);
     in_uint32_le(in_s, *z);
     return 0;
 }
@@ -179,7 +177,7 @@ dspmain_crc32(void* obj, int addr, int format, int width, int height,
 
     ldsp = (struct libdspmain_t*)obj;
     out_s = &(ldsp->out_s);
-    if (!s_check_rem_out(out_s, 36))
+    if (!s_check_rem_out(out_s, 32))
     {
         error = dspmain_flush(obj);
         if (error != 0)
@@ -188,14 +186,13 @@ dspmain_crc32(void* obj, int addr, int format, int width, int height,
         }
     }
     out_uint32_le(out_s, 2); /* CRC32MSGSUBID */
-    out_uint32_le(out_s, 36);
+    out_uint32_le(out_s, 32);
     out_uint32_le(out_s, ldsp->sequence);
     out_uint32_le(out_s, addr);
     out_uint32_le(out_s, format);
     out_uint32_le(out_s, width);
     out_uint32_le(out_s, height);
     out_uint32_le(out_s, stride_bytes);
-    out_uint32_le(out_s, 0);
     *cookie = ldsp->sequence++;
     return 0;
 }
@@ -230,7 +227,7 @@ dspmain_crc32_result(void* obj, int cookie, int* crc32)
         return 1;
     }
     in_uint32_le(in_s, size);
-    if (size != 36)
+    if (size != 16)
     {
         return 1;
     }
@@ -248,7 +245,6 @@ dspmain_crc32_result(void* obj, int cookie, int* crc32)
     {
         return dspmain_mult_result(obj, cookie, crc32);
     }
-    in_uint8s(in_s, 20);
     in_uint32_le(in_s, *crc32);
     return 0;
 }

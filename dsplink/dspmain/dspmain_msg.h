@@ -43,3 +43,9 @@ struct my_msg_crc32_t
     int stride_bytes;
     int crc32;
 };
+
+#define SHUTDOWNMSGSUBID 3
+struct my_msg_shutdown_t
+{
+    MYMSGHEADER
+};
