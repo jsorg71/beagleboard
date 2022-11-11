@@ -123,6 +123,7 @@ send_shutdown_msg(struct dspmain_t* dspmain, const char* msgq_name)
         my_msg_shutdown = (struct my_msg_shutdown_t*)msg;
         my_msg_shutdown->subid = SHUTDOWNMSGSUBID;
         my_msg_shutdown->sequence = dspmain->sequence++;
+        /* set reply_msgq not for reply but so dsp can call MSGQ_release */
         my_msg_shutdown->reply_msgq = dspmain->reply_msgq;
         for (index = 0; index < MSGQ_MYMSGID_NUM_USER; index++)
         {
@@ -309,7 +310,8 @@ process_mymsg(struct dspmain_t* dspmain, struct my_msg_t* my_msg)
             break;
         case CRC32MSGSUBID:
             my_msg_crc32 = (struct my_msg_crc32_t*)my_msg;
-            LOGLND((LOG_INFO, LOGS "CRC32MSGSUBID z %d", LOGP, my_msg_crc32->crc32));
+            LOGLND((LOG_INFO, LOGS "CRC32MSGSUBID z %d", LOGP,
+                    my_msg_crc32->crc32));
             if (peer != NULL)
             {
                 dspmain_queue_crc32(dspmain, peer, my_msg_crc32);
@@ -429,8 +431,8 @@ dspmain_loop(struct dspmain_t* dspmain)
     fd_set wfds;
 
     status = send_get_reply_msgq_msg(dspmain, dspmain->gpp_msgq_name);
-    LOGLN((LOG_INFO, LOGS "send_get_reply_msgq_msg status 0x%8.8lx",
-           LOGP, status));
+    LOGLN((LOG_INFO, LOGS "send_get_reply_msgq_msg status 0x%8.8lx name %s",
+           LOGP, status, dspmain->gpp_msgq_name));
     if (DSP_SUCCEEDED(status))
     {
         while (dspmain->reply_msgq == 0)
@@ -466,6 +468,7 @@ dspmain_loop(struct dspmain_t* dspmain)
         if (DSP_SUCCEEDED(status))
         {
             LOGLN((LOG_INFO, LOGS "send_shutdown_msg succeeded", LOGP));
+            usleep(500 * 1000);
         }
         else
         {
@@ -533,6 +536,7 @@ dspmain_loaded(struct dspmain_t* dspmain)
         LOGLN((LOG_INFO, LOGS "PROC_start status 0x%8.8lx", LOGP, status));
         if (DSP_SUCCEEDED(status))
         {
+            usleep(50 * 1000);
             status = dspmain_started(dspmain);
             LOGLN((LOG_INFO, LOGS "dspmain_started status 0x%8.8lx",
                    LOGP, status));
