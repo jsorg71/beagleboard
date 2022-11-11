@@ -149,7 +149,7 @@ clean:
 %.obj: $(EDMA3PATH)/packages/ti/sdo/edma3/drv/sample/src/configs/%.c
 	$(CC) $(CFLAGS) -c $<
 
-dspmaincfg.obj:
+dspmaincfg.obj: dspmain.tcf dspmain.tci dsplink-omap3530-base.tci
 	$(TCONF) -Dconfig.importPath=$(IMPORT_PATH) dspmain.tcf 0
 	$(CC) $(CFLAGS) -c dspmaincfg.s62
 	$(CC) $(CFLAGS) -c dspmaincfg_c.c

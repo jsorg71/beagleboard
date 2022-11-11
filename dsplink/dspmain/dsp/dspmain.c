@@ -17,7 +17,6 @@
 #include "dspmain_edma.h"
 
 static MSGQ_Queue g_dsp_msgq = MSGQ_INVALIDMSGQ;
-static SEM_Obj g_notifySemObj; /* initalized in dspmain_tsk() */
 static int g_shutdown = 0;
 
 /*****************************************************************************/
@@ -66,6 +65,8 @@ process_MSGQ_MYMSGID(MSGQ_Msg msg)
             break;
         case SHUTDOWNMSGSUBID:
             g_shutdown = 1;
+            MSGQ_release(my_msg->reply_msgq);
+            my_msg->reply_msgq = 0;
             break;
     }
     if (my_msg->reply_msgq != 0)
@@ -110,13 +111,15 @@ process_MSGQ_ASYNCLOCATEMSGID(MSGQ_Msg msg)
 static int
 dspmain_tsk(void)
 {
+    SEM_Handle notifySemHandle;
+    SEM_Attrs semAttrs = SEM_ATTRS;
     MSGQ_Msg msg;
     MSGQ_Attrs msgqAttrs;
     int status;
 
-    SEM_new(&g_notifySemObj, 0);
+    notifySemHandle = SEM_create(0, &semAttrs);
     msgqAttrs = MSGQ_ATTRS;
-    msgqAttrs.notifyHandle = &g_notifySemObj;
+    msgqAttrs.notifyHandle = notifySemHandle;
     msgqAttrs.pend = (MSGQ_Pend)SEM_pendBinary;
     msgqAttrs.post = (MSGQ_Post)SEM_postBinary;
     status = MSGQ_open(DSP_MSGQNAME, &g_dsp_msgq, &msgqAttrs);
@@ -149,6 +152,12 @@ dspmain_tsk(void)
             break;
         }
     }
+    MSGQ_setErrorHandler(MSGQ_INVALIDMSGQ, POOL_INVALIDID);
+    MSGQ_close(g_dsp_msgq);
+    g_dsp_msgq = MSGQ_INVALIDMSGQ;
+    SEM_delete(notifySemHandle);
+    dma_deinit();
+    BCACHE_wbInvAll();
     return 0;
 }
 
@@ -157,6 +166,7 @@ void
 main(int argc, char** argv)
 {
     DSPLINK_init();
+    BCACHE_wbInvAll();
     dma_init();
     TSK_create(dspmain_tsk, NULL, 0);
 }
