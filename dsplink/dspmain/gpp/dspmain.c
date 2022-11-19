@@ -25,6 +25,9 @@
 #include "dspmain_error.h"
 
 #define UDS_SCK_FILE "/tmp/dspmain.sck"
+#define LOG_FILENAME "/tmp/dspmain_%d.log"
+#define LAST_LOG_FILENAME "/tmp/dspmain_last.log"
+#define MAX_LOG_PATH 256
 
 #define LOG_FLAG_FILE   1
 #define LOG_FLAG_STDOUT 2
@@ -35,7 +38,6 @@ static int g_log_level = 4;
 
 struct settings_info
 {
-    char log_filename[256];
     int daemonize;
     int forground;
 };
@@ -50,7 +52,8 @@ static const char g_log_pre[][8] =
 
 static int g_log_fd = -1;
 static int g_log_flags = LOG_FLAG_STDOUT;
-static char g_log_filename[256];
+static char g_log_filename[MAX_LOG_PATH] = LOG_FILENAME;
+static char g_last_log_filename[MAX_LOG_PATH] = LAST_LOG_FILENAME;
 
 /*****************************************************************************/
 static int
@@ -108,8 +111,13 @@ logln(int log_level, const char* format, ...)
 
 /*****************************************************************************/
 int
-log_init(int flags, int log_level, const char* filename)
+log_init(int flags, int log_level)
 {
+    char filename[256];
+
+    snprintf(filename, MAX_LOG_PATH, g_log_filename, getpid());
+    filename[MAX_LOG_PATH - 1] = 0;
+    strcpy(g_log_filename, filename);
     g_log_flags = flags;
     g_log_level = log_level;
     if (flags & LOG_FLAG_FILE)
@@ -127,8 +135,6 @@ log_init(int flags, int log_level, const char* filename)
             g_log_fd = -1;
             return 1;
         }
-        strncpy(g_log_filename, filename, 255);
-        g_log_filename[255] = 0;
     }
     return 0;
 }
@@ -140,7 +146,8 @@ log_deinit(void)
     if (g_log_fd != -1)
     {
         close(g_log_fd);
-        unlink(g_log_filename);
+        unlink(g_last_log_filename);
+        rename(g_log_filename, g_last_log_filename);
     }
     return 0;
 }
@@ -707,7 +714,7 @@ process_args(int argc, char** argv, struct settings_info* settings)
 
     if (argc < 1)
     {
-        return 1;
+        return DSP_ERROR_PARAM;
     }
     for (index = 1; index < argc; index++)
     {
@@ -721,10 +728,10 @@ process_args(int argc, char** argv, struct settings_info* settings)
         }
         else
         {
-            return 1;
+            return DSP_ERROR_PARAM;
         }
     }
-    return 0;
+    return DSP_ERROR_NONE;
 }
 
 /*****************************************************************************/
@@ -733,12 +740,12 @@ printf_help(int argc, char** argv)
 {
     if (argc < 1)
     {
-        return 0;
+        return DSP_ERROR_NONE;
     }
     printf("%s: command line options\n", argv[0]);
     printf("    -D      run daemon and log to file, example -D\n");
     printf("    -F      run forground and log to stdout, example -F\n");
-    return 0;
+    return DSP_ERROR_NONE;
 }
 
 /*****************************************************************************/
@@ -748,7 +755,6 @@ main(int argc, char** argv)
     struct settings_info* settings;
     struct dspmain_t* dspmain;
     struct sockaddr_un s;
-    int pid;
     int error;
     int sck;
     size_t sz;
@@ -757,9 +763,9 @@ main(int argc, char** argv)
     if (settings == NULL)
     {
         printf("malloc error\n");
-        return 1;
+        return 0;
     }
-    if (process_args(argc, argv, settings) != 0)
+    if (process_args(argc, argv, settings) != DSP_ERROR_NONE)
     {
         printf_help(argc, argv);
         free(settings);
@@ -776,13 +782,7 @@ main(int argc, char** argv)
             open("/dev/null", O_RDONLY);
             open("/dev/null", O_WRONLY);
             open("/dev/null", O_WRONLY);
-            pid = getpid();
-            if (settings->log_filename[0] == 0)
-            {
-                snprintf(settings->log_filename, 255,
-                         "/tmp/dspmain_%d.log", pid);
-            }
-            log_init(LOG_FLAG_FILE, 4, settings->log_filename);
+            log_init(LOG_FLAG_FILE, 4);
         }
         else if (error > 0)
         {
@@ -799,7 +799,7 @@ main(int argc, char** argv)
     }
     else if (settings->forground)
     {
-        log_init(LOG_FLAG_STDOUT, 4, NULL);
+        log_init(LOG_FLAG_STDOUT, 4);
     }
     else
     {
