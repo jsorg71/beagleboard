@@ -19,5 +19,7 @@ int
 dspmain_peer_queue(struct dspmain_peer_t* peer, struct stream* out_s);
 int
 dspmain_peer_queue_copy(struct dspmain_peer_t* peer, struct stream* out_s);
+int
+dspmain_peer_cleanup(struct dspmain_t* dspmain);
 
 #endif

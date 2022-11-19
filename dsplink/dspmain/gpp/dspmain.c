@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 #include <dsplink.h>
 #include <proc.h>
@@ -23,9 +24,21 @@
 #include "dspmain_peer.h"
 #include "dspmain_error.h"
 
+#define UDS_SCK_FILE "/tmp/dspmain.sck"
+
+#define LOG_FLAG_FILE   1
+#define LOG_FLAG_STDOUT 2
+
 static int g_term_pipe[2];
 
 static int g_log_level = 4;
+
+struct settings_info
+{
+    char log_filename[256];
+    int daemonize;
+    int forground;
+};
 
 static const char g_log_pre[][8] =
 {
@@ -34,6 +47,10 @@ static const char g_log_pre[][8] =
     "INFO",
     "DEBUG"
 };
+
+static int g_log_fd = -1;
+static int g_log_flags = LOG_FLAG_STDOUT;
+static char g_log_filename[256];
 
 /*****************************************************************************/
 static int
@@ -51,6 +68,8 @@ logln(int log_level, const char* format, ...)
 {
     va_list ap;
     char* log_line;
+    int mstime;
+    int len;
 
     if (log_level < g_log_level)
     {
@@ -62,10 +81,66 @@ logln(int log_level, const char* format, ...)
         va_start(ap, format);
         vsnprintf(log_line, 1024, format, ap);
         va_end(ap);
-        snprintf(log_line + 1024, 1024, "[%10.10u][%s]%s",
-                 get_mstime(), g_log_pre[log_level % 4], log_line);
-        printf("%s\n", log_line + 1024);
+        mstime = get_mstime();
+        len = snprintf(log_line + 1024, 1024, "[%10.10u][%s]%s\n",
+                       mstime, g_log_pre[log_level % 4], log_line);
+        if (g_log_flags & LOG_FLAG_FILE)
+        {
+            if (g_log_fd == -1)
+            {
+                free(log_line);
+                return 1;
+            }
+            if (len != write(g_log_fd, log_line + 1024, len))
+            {
+                free(log_line);
+                return 1;
+            }
+        }
+        if (g_log_flags & LOG_FLAG_STDOUT)
+        {
+            printf("%s", log_line + 1024);
+        }
         free(log_line);
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+int
+log_init(int flags, int log_level, const char* filename)
+{
+    g_log_flags = flags;
+    g_log_level = log_level;
+    if (flags & LOG_FLAG_FILE)
+    {
+        g_log_fd = open(filename,
+                        O_WRONLY | O_CREAT | O_TRUNC,
+                        S_IRUSR | S_IWUSR);
+        if (g_log_fd == -1)
+        {
+            return 1;
+        }
+        if (chmod(filename, 0666) != 0)
+        {
+            close(g_log_fd);
+            g_log_fd = -1;
+            return 1;
+        }
+        strncpy(g_log_filename, filename, 255);
+        g_log_filename[255] = 0;
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+int
+log_deinit(void)
+{
+    if (g_log_fd != -1)
+    {
+        close(g_log_fd);
+        unlink(g_log_filename);
     }
     return 0;
 }
@@ -595,41 +670,12 @@ sig_pipe(int sig)
 }
 
 /*****************************************************************************/
-int
-main(int argc, char** argv)
+static DSP_STATUS
+dspmain_listening(struct dspmain_t* dspmain)
 {
     DSP_STATUS status;
-    struct dspmain_t dspmain;
-    struct sockaddr_un s;
-    int sck;
 
-    pipe(g_term_pipe);
-    memset(&dspmain, 0, sizeof(dspmain));
-    sck = socket(PF_LOCAL, SOCK_STREAM, 0);
-    if (sck == -1)
-    {
-        LOGLN((LOG_ERROR, LOGS "sck error", LOGP));
-        return 1;
-    }
-    unlink("/tmp/dspmain.sck");
-    memset(&s, 0, sizeof(struct sockaddr_un));
-    s.sun_family = AF_UNIX;
-    strncpy(s.sun_path, "/tmp/dspmain.sck", sizeof(s.sun_path));
-    s.sun_path[sizeof(s.sun_path) - 1] = 0;
-    if (bind(sck, (struct sockaddr*)&s, sizeof(struct sockaddr_un)) != 0)
-    {
-        LOGLN((LOG_ERROR, LOGS "bind failed", LOGP));
-        close(sck);
-        return 1;
-    }
-    if (listen(sck, 2) != 0)
-    {
-        LOGLN((LOG_ERROR, LOGS "listen failed", LOGP));
-        close(sck);
-        return 1;
-    }
-    dspmain.listen_sck = sck;
-    dspmain.pool_id = POOL_makePoolId(0, 0);
+    dspmain->pool_id = POOL_makePoolId(0, 0);
     status = PROC_setup(NULL);
     LOGLN((LOG_INFO, LOGS "PROC_setup status 0x%8.8lx", LOGP, status));
     if (DSP_SUCCEEDED(status))
@@ -641,7 +687,7 @@ main(int argc, char** argv)
             signal(SIGINT, sig_int);
             signal(SIGTERM, sig_int);
             signal(SIGPIPE, sig_pipe);
-            status = dspmain_attached(&dspmain);
+            status = dspmain_attached(dspmain);
             LOGLN((LOG_INFO, LOGS "dspmain_attached status 0x%8.8lx",
                    LOGP, status));
             status = PROC_detach(0);
@@ -650,5 +696,171 @@ main(int argc, char** argv)
         status = PROC_destroy();
         LOGLN((LOG_INFO, LOGS "PROC_destroy status 0x%8.8lx", LOGP, status));
     }
+    return status;
+}
+
+/*****************************************************************************/
+static int
+process_args(int argc, char** argv, struct settings_info* settings)
+{
+    int index;
+
+    if (argc < 1)
+    {
+        return 1;
+    }
+    for (index = 1; index < argc; index++)
+    {
+        if (strcmp("-D", argv[index]) == 0)
+        {
+            settings->daemonize = 1;
+        }
+        else if (strcmp("-F", argv[index]) == 0)
+        {
+            settings->forground = 1;
+        }
+        else
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+static int
+printf_help(int argc, char** argv)
+{
+    if (argc < 1)
+    {
+        return 0;
+    }
+    printf("%s: command line options\n", argv[0]);
+    printf("    -D      run daemon and log to file, example -D\n");
+    printf("    -F      run forground and log to stdout, example -F\n");
+    return 0;
+}
+
+/*****************************************************************************/
+int
+main(int argc, char** argv)
+{
+    struct settings_info* settings;
+    struct dspmain_t* dspmain;
+    struct sockaddr_un s;
+    int pid;
+    int error;
+    int sck;
+    size_t sz;
+
+    settings = xnew0(struct settings_info, 1);
+    if (settings == NULL)
+    {
+        printf("malloc error\n");
+        return 1;
+    }
+    if (process_args(argc, argv, settings) != 0)
+    {
+        printf_help(argc, argv);
+        free(settings);
+        return 0;
+    }
+    if (settings->daemonize)
+    {
+        error = fork();
+        if (error == 0)
+        {
+            close(0);
+            close(1);
+            close(2);
+            open("/dev/null", O_RDONLY);
+            open("/dev/null", O_WRONLY);
+            open("/dev/null", O_WRONLY);
+            pid = getpid();
+            if (settings->log_filename[0] == 0)
+            {
+                snprintf(settings->log_filename, 255,
+                         "/tmp/dspmain_%d.log", pid);
+            }
+            log_init(LOG_FLAG_FILE, 4, settings->log_filename);
+        }
+        else if (error > 0)
+        {
+            printf("start daemon with pid %d\n", error);
+            free(settings);
+            return 0;
+        }
+        else
+        {
+            printf("fork failed\n");
+            free(settings);
+            return 1;
+        }
+    }
+    else if (settings->forground)
+    {
+        log_init(LOG_FLAG_STDOUT, 4, NULL);
+    }
+    else
+    {
+        printf_help(argc, argv);
+        free(settings);
+        return 0;
+    }
+    sz = sizeof(struct dspmain_t);
+    dspmain = xnew0(struct dspmain_t, 1);
+    if (dspmain != NULL)
+    {
+        if (pipe(g_term_pipe) == 0)
+        {
+            sck = socket(PF_LOCAL, SOCK_STREAM, 0);
+            if (sck > -1)
+            {
+                unlink(UDS_SCK_FILE);
+                sz = sizeof(s);
+                memset(&s, 0, sz);
+                s.sun_family = AF_UNIX;
+                sz = sizeof(s.sun_path);
+                strncpy(s.sun_path, UDS_SCK_FILE, sz);
+                s.sun_path[sz - 1] = 0;
+                sz = sizeof(s);
+                if (bind(sck, (struct sockaddr*)&s, sz) == 0)
+                {
+                    if (listen(sck, 2) == 0)
+                    {
+                        dspmain->listen_sck = sck;
+                        dspmain_listening(dspmain);
+                        dspmain_peer_cleanup(dspmain);
+                    }
+                    else
+                    {
+                        LOGLN((LOG_ERROR, LOGS "listen error", LOGP));
+                    }
+                }
+                else
+                {
+                    LOGLN((LOG_ERROR, LOGS "bind error", LOGP));
+                }
+                close(sck);
+            }
+            else
+            {
+                LOGLN((LOG_ERROR, LOGS "socket error", LOGP));
+            }
+            close(g_term_pipe[0]);
+            close(g_term_pipe[1]);
+        }
+        else
+        {
+            LOGLN((LOG_ERROR, LOGS "pipe error", LOGP));
+        }
+        free(dspmain);
+    }
+    else
+    {
+        LOGLN((LOG_ERROR, LOGS "calloc error", LOGP));
+    }
+    log_deinit();
+    free(settings);
     return 0;
 }

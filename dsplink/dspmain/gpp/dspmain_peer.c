@@ -497,3 +497,20 @@ dspmain_peer_queue_copy(struct dspmain_peer_t* peer, struct stream* out_s)
     lout_s->p = lout_s->data;
     return dspmain_peer_queue(peer, lout_s);
 }
+
+/*****************************************************************************/
+int
+dspmain_peer_cleanup(struct dspmain_t* dspmain)
+{
+    struct dspmain_peer_t* peer;
+    struct dspmain_peer_t* next_peer;
+
+    peer = dspmain->peer_head;
+    while (peer != NULL)
+    {
+		next_peer = peer->next;
+		dspmain_peer_delete_one(peer);
+		peer = next_peer;
+	}
+	return 0;
+}
