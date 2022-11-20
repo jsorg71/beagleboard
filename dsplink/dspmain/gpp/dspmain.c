@@ -457,8 +457,46 @@ static DSP_STATUS
 dspmain_loop(struct dspmain_t* dspmain)
 {
     DSP_STATUS status;
-    fd_set rfds;
-    fd_set wfds;
+    fd_set* fds;
+
+    status = DSP_SOK;
+    fds = xnew(fd_set, 2);
+    if (fds != NULL)
+    {
+        while (dspmain->term == 0)
+        {
+            if (dspmain_wait_fds(dspmain, fds, fds + 1, 0) > 0)
+            {
+                LOGLND((LOG_INFO, LOGS "calling dspmain_check_fds", LOGP));
+                dspmain_check_fds(dspmain, fds, fds + 1);
+            }
+            else if (dspmain->processing_count > 0)
+            {
+                LOGLND((LOG_INFO, LOGS "calling dspmain_process_one_msgq",
+                        LOGP));
+                dspmain_process_one_msgq(dspmain, WAIT_FOREVER);
+            }
+            else
+            {
+                LOGLND((LOG_INFO, LOGS "calling dspmain_wait_fds", LOGP));
+                dspmain_wait_fds(dspmain, fds, fds + 1, -1);
+            }
+        }
+        free(fds);
+    }
+    else
+    {
+        LOGLN((LOG_INFO, LOGS "alloc error", LOGP));
+        status = DSP_EMEMORY;
+    }
+    return status;
+}
+
+/*****************************************************************************/
+static DSP_STATUS
+dspmain_located(struct dspmain_t* dspmain)
+{
+    DSP_STATUS status;
 
     status = send_get_reply_msgq_msg(dspmain, dspmain->gpp_msgq_name);
     LOGLN((LOG_INFO, LOGS "send_get_reply_msgq_msg status 0x%8.8lx name %s",
@@ -475,24 +513,14 @@ dspmain_loop(struct dspmain_t* dspmain)
         }
         LOGLN((LOG_INFO, LOGS "got reply_msgq 0x%x",
                LOGP, dspmain->reply_msgq));
-        while (dspmain->term == 0)
+        status = dspmain_loop(dspmain);
+        if (DSP_SUCCEEDED(status))
         {
-            if (dspmain_wait_fds(dspmain, &rfds, &wfds, 0) > 0)
-            {
-                LOGLND((LOG_INFO, LOGS "calling dspmain_check_fds", LOGP));
-                dspmain_check_fds(dspmain, &rfds, &wfds);
-            }
-            else if (dspmain->processing_count > 0)
-            {
-                LOGLND((LOG_INFO, LOGS "calling dspmain_process_one_msgq",
-                        LOGP));
-                dspmain_process_one_msgq(dspmain, WAIT_FOREVER);
-            }
-            else
-            {
-                LOGLND((LOG_INFO, LOGS "calling dspmain_wait_fds", LOGP));
-                dspmain_wait_fds(dspmain, &rfds, &wfds, -1);
-            }
+            LOGLN((LOG_INFO, LOGS "dspmain_loop succeeded", LOGP));
+        }
+        else
+        {
+            LOGLN((LOG_INFO, LOGS "dspmain_loop failed", LOGP));
         }
         status = send_shutdown_msg(dspmain, dspmain->gpp_msgq_name);
         if (DSP_SUCCEEDED(status))
@@ -531,7 +559,7 @@ dspmain_started(struct dspmain_t* dspmain)
                "name DSPMSGQ0", LOGP, status, syncLocateAttrs.timeout));
         if (DSP_SUCCEEDED(status))
         {
-            status = dspmain_loop(dspmain);
+            status = dspmain_located(dspmain);
             LOGLN((LOG_INFO, LOGS "dspmain_loop status 0x%8.8lx",
                    LOGP, status));
         }
@@ -710,7 +738,7 @@ main(int argc, char** argv)
     settings = xnew0(struct settings_info, 1);
     if (settings == NULL)
     {
-        printf("malloc error\n");
+        printf("alloc error\n");
         return 0;
     }
     if (process_args(argc, argv, settings) != DSP_ERROR_NONE)
@@ -805,7 +833,7 @@ main(int argc, char** argv)
     }
     else
     {
-        LOGLN((LOG_ERROR, LOGS "calloc error", LOGP));
+        LOGLN((LOG_ERROR, LOGS "alloc error", LOGP));
     }
     log_deinit();
     free(settings);
