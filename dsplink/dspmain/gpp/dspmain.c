@@ -25,7 +25,7 @@
 #include "dspmain_error.h"
 
 #define UDS_SCK_FILE "/tmp/dspmain.sck"
-#define LOG_FILENAME "/tmp/dspmain_%d.log"
+#define LOG_FILENAME "/tmp/dspmain.log"
 #define LAST_LOG_FILENAME "/tmp/dspmain_last.log"
 #define MAX_LOG_PATH 256
 
@@ -113,23 +113,18 @@ logln(int log_level, const char* format, ...)
 int
 log_init(int flags, int log_level)
 {
-    char filename[256];
-
-    snprintf(filename, MAX_LOG_PATH, g_log_filename, getpid());
-    filename[MAX_LOG_PATH - 1] = 0;
-    strcpy(g_log_filename, filename);
     g_log_flags = flags;
     g_log_level = log_level;
     if (flags & LOG_FLAG_FILE)
     {
-        g_log_fd = open(filename,
+        g_log_fd = open(g_log_filename,
                         O_WRONLY | O_CREAT | O_TRUNC,
                         S_IRUSR | S_IWUSR);
         if (g_log_fd == -1)
         {
             return 1;
         }
-        if (chmod(filename, 0666) != 0)
+        if (chmod(g_log_filename, 0666) != 0)
         {
             close(g_log_fd);
             g_log_fd = -1;
@@ -225,52 +220,6 @@ send_shutdown_msg(struct dspmain_t* dspmain, const char* msgq_name)
     return status;
 }
 
-#if 0
-/*****************************************************************************/
-/* produce a hex dump */
-static void
-hexdump(const void* p, int len)
-{
-    unsigned char *line;
-    int i;
-    int thisline;
-    int offset;
-
-    line = (unsigned char*)p;
-    offset = 0;
-
-    while (offset < len)
-    {
-        printf("%04x ", offset);
-        thisline = len - offset;
-
-        if (thisline > 16)
-        {
-            thisline = 16;
-        }
-
-        for (i = 0; i < thisline; i++)
-        {
-            printf("%02x ", line[i]);
-        }
-
-        for (; i < 16; i++)
-        {
-            printf("   ");
-        }
-
-        for (i = 0; i < thisline; i++)
-        {
-            printf("%c", (line[i] >= 0x20 && line[i] < 0x7f) ? line[i] : '.');
-        }
-
-        printf("\n");
-        offset += thisline;
-        line += thisline;
-    }
-}
-#endif
-
 /*****************************************************************************/
 DSP_STATUS
 send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
@@ -300,7 +249,6 @@ send_mult_msg(struct dspmain_t* dspmain, int* user, int num_user,
         status = MSGQ_put(dspmain->dsp_msgq, msg);
         if (DSP_SUCCEEDED(status))
         {
-            //hexdump(my_msg_mult, sizeof(struct my_msg_mult_t));
             dspmain->processing_count++;
         }
         else
@@ -486,7 +434,7 @@ dspmain_check_fds(struct dspmain_t* dspmain, fd_set* rfds, fd_set* wfds)
     }
     if (FD_ISSET(dspmain->listen_sck, rfds))
     {
-        sock_len = sizeof(struct sockaddr_un);
+        sock_len = sizeof(s);
         sck = accept(dspmain->listen_sck, (struct sockaddr*)&s, &sock_len);
         if (sck != -1)
         {
@@ -807,7 +755,6 @@ main(int argc, char** argv)
         free(settings);
         return 0;
     }
-    sz = sizeof(struct dspmain_t);
     dspmain = xnew0(struct dspmain_t, 1);
     if (dspmain != NULL)
     {
