@@ -362,6 +362,8 @@ dspmain_process_one_msgq(struct dspmain_t* dspmain, int timeout)
     status = MSGQ_get(dspmain->gpp_msgq, timeout, &msg);
     if (DSP_SUCCEEDED(status))
     {
+        LOGLND((LOG_INFO, LOGS "got msg, processing_count %d timeout %d",
+                LOGP, dspmain->processing_count, timeout));
         dspmain->processing_count--;
         if (MSGQ_getMsgId(msg) == MSGQ_MYMSGID)
         {
@@ -376,6 +378,9 @@ dspmain_process_one_msgq(struct dspmain_t* dspmain, int timeout)
     else if (status == DSP_ENOTCOMPLETE)
     {
     }
+    LOGLND((LOG_INFO, LOGS "status 0x%8.8x DSP_SOK 0x%8.8x "
+            "DSP_ETIMEOUT 0x%8.8x DSP_ENOTCOMPLETE 0x%8.8x", LOGP,
+            status, DSP_SOK, DSP_ETIMEOUT, DSP_ENOTCOMPLETE));
     return status;
 }
 
@@ -469,6 +474,7 @@ dspmain_loop(struct dspmain_t* dspmain)
             {
                 LOGLND((LOG_INFO, LOGS "calling dspmain_check_fds", LOGP));
                 dspmain_check_fds(dspmain, fds, fds + 1);
+                while (DSP_SUCCEEDED(dspmain_process_one_msgq(dspmain, 0)));
             }
             else if (dspmain->processing_count > 0)
             {
