@@ -21,7 +21,7 @@
 
 /*
  * Ported to GLES2.
- * Kristian Høgsberg <krh@bitplanet.net>
+ * Kristian Hoegsberg <krh@bitplanet.net>
  * May 3, 2010
  *
  * Improve GLES2 port:
@@ -56,6 +56,41 @@
 #define VERTICES_PER_TOOTH 34
 #define GEAR_VERTEX_STRIDE 6
 
+/* A set of macros for making the creation of the gears easier */
+#define GEAR_POINT(i, r, da) do { \
+    p[(i)].x = (r) * c[(da)]; \
+    p[(i)].y = (r) * s[(da)]; \
+} while (0)
+#define SET_NORMAL(x, y, z) do { \
+    normal[0] = (x); \
+    normal[1] = (y); \
+    normal[2] = (z); \
+} while (0)
+
+#define GEAR_VERT(v, point, sign) \
+    vert((v), p[(point)].x, p[(point)].y, (sign) * width * 0.5, normal)
+
+#define START_STRIP do { \
+    gear->strips[cur_strip].first = v - gear->vertices; \
+} while (0);
+
+#define END_STRIP do { \
+    int _tmp = (v - gear->vertices); \
+    gear->strips[cur_strip].count = _tmp - gear->strips[cur_strip].first; \
+    cur_strip++; \
+} while (0)
+
+#define QUAD_WITH_NORMAL(p1, p2) do { \
+    SET_NORMAL((p[(p1)].y - p[(p2)].y), -(p[(p1)].x - p[(p2)].x), 0); \
+    v = GEAR_VERT(v, (p1), -1); \
+    v = GEAR_VERT(v, (p1), 1); \
+    v = GEAR_VERT(v, (p2), -1); \
+    v = GEAR_VERT(v, (p2), 1); \
+} while (0)
+
+/* Each vertex consist of GEAR_VERTEX_STRIDE GLfloat attributes */
+typedef GLfloat GearVertex[GEAR_VERTEX_STRIDE];
+
 /**
  * Struct describing the vertices in triangle strip
  */
@@ -66,9 +101,6 @@ struct vertex_strip_t
     /** The number of consecutive vertices in the strip after the first */
     GLint count;
 };
-
-/* Each vertex consist of GEAR_VERTEX_STRIDE GLfloat attributes */
-typedef GLfloat GearVertex[GEAR_VERTEX_STRIDE];
 
 /**
  * Struct representing a gear.
@@ -93,6 +125,22 @@ struct point_t
     GLfloat y;
 };
 
+static const EGLint g_config_attribs[] =
+{
+    EGL_RED_SIZE,                   8,
+    EGL_GREEN_SIZE,                 8,
+    EGL_BLUE_SIZE,                  8,
+    EGL_DEPTH_SIZE,                 8,
+    EGL_RENDERABLE_TYPE,            EGL_OPENGL_ES2_BIT,
+    EGL_NONE
+};
+
+static const EGLint g_context_attribs[] =
+{
+    EGL_CONTEXT_MAJOR_VERSION,      2,
+    EGL_NONE
+};
+
 static int g_start_time;
 
 /** The view rotation [x, y, z] */
@@ -112,6 +160,14 @@ static GLuint g_MaterialColor_location;
 static GLfloat g_ProjectionMatrix[16];
 /** The direction of the directional light for the scene */
 static const GLfloat g_LightSourcePosition[4] = { 5.0, 5.0, 10.0, 1.0};
+
+static const GLfloat g_red[4] = { 0.8, 0.1, 0.0, 1.0 };
+static const GLfloat g_green[4] = { 0.0, 0.8, 0.2, 1.0 };
+static const GLfloat g_blue[4] = { 0.2, 0.2, 1.0, 1.0 };
+
+static int g_frames = 0;
+static double g_tRot0 = -1.0;
+static double g_tRate0 = -1.0;
 
 /**
  * Fills a gear vertex.
@@ -135,36 +191,6 @@ vert(GearVertex *v, GLfloat x, GLfloat y, GLfloat z, GLfloat n[3])
     v[0][5] = n[2];
     return v + 1;
 }
-
-/* A set of macros for making the creation of the gears easier */
-#define GEAR_POINT(i, r, da) do { \
-    p[i].x = (r) * c[(da)]; \
-    p[i].y = (r) * s[(da)]; \
-} while (0)
-#define SET_NORMAL(x, y, z) do { \
-    normal[0] = (x); normal[1] = (y); normal[2] = (z); \
-} while (0)
-
-#define GEAR_VERT(v, point, sign) \
-    vert((v), p[(point)].x, p[(point)].y, (sign) * width * 0.5, normal)
-
-#define START_STRIP do { \
-    gear->strips[cur_strip].first = v - gear->vertices; \
-} while (0);
-
-#define END_STRIP do { \
-    int _tmp = (v - gear->vertices); \
-    gear->strips[cur_strip].count = _tmp - gear->strips[cur_strip].first; \
-    cur_strip++; \
-} while (0)
-
-#define QUAD_WITH_NORMAL(p1, p2) do { \
-    SET_NORMAL((p[(p1)].y - p[(p2)].y), -(p[(p1)].x - p[(p2)].x), 0); \
-    v = GEAR_VERT(v, (p1), -1); \
-    v = GEAR_VERT(v, (p1), 1); \
-    v = GEAR_VERT(v, (p2), -1); \
-    v = GEAR_VERT(v, (p2), 1); \
-} while (0)
 
 /**
  *  Create a gear wheel.
@@ -511,15 +537,12 @@ draw_gear(struct gear_t *gear, GLfloat *transform,
     memcpy(model_view, transform, sizeof(model_view));
     translate(model_view, x, y, 0);
     rotate(model_view, 2 * M_PI * angle / 360.0, 0, 0, 1);
-
     /* Create and set the ModelViewProjectionMatrix */
     memcpy(model_view_projection, g_ProjectionMatrix,
            sizeof(model_view_projection));
     multiply(model_view_projection, model_view);
-
     glUniformMatrix4fv(g_ModelViewProjectionMatrix_location, 1, GL_FALSE,
                        model_view_projection);
-
     /*
      * Create and set the NormalMatrix. It's the inverse transpose of the
      * ModelView matrix.
@@ -528,30 +551,24 @@ draw_gear(struct gear_t *gear, GLfloat *transform,
     invert(normal_matrix);
     transpose(normal_matrix);
     glUniformMatrix4fv(g_NormalMatrix_location, 1, GL_FALSE, normal_matrix);
-
     /* Set the gear color */
     glUniform4fv(g_MaterialColor_location, 1, color);
-
     /* Set the vertex buffer object to use */
     glBindBuffer(GL_ARRAY_BUFFER, gear->vbo);
-
     /* Set up the position of the attributes in the vertex buffer object */
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
                           6 * sizeof(GLfloat), NULL);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
                           6 * sizeof(GLfloat), (GLfloat *) 0 + 3);
-
     /* Enable the attributes */
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
-
     /* Draw the triangle strips that comprise the gear */
     for (n = 0; n < gear->nstrips; n++)
     {
         glDrawArrays(GL_TRIANGLE_STRIP, gear->strips[n].first,
                      gear->strips[n].count);
     }
-
     /* Disable the attributes */
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(0);
@@ -563,9 +580,6 @@ draw_gear(struct gear_t *gear, GLfloat *transform,
 static void
 gears_draw(void)
 {
-    const static GLfloat red[4] = { 0.8, 0.1, 0.0, 1.0 };
-    const static GLfloat green[4] = { 0.0, 0.8, 0.2, 1.0 };
-    const static GLfloat blue[4] = { 0.2, 0.2, 1.0, 1.0 };
     GLfloat transform[16];
 
     identity(transform);
@@ -577,9 +591,9 @@ gears_draw(void)
     rotate(transform, 2 * M_PI * g_view_rot[1] / 360.0, 0, 1, 0);
     rotate(transform, 2 * M_PI * g_view_rot[2] / 360.0, 0, 0, 1);
     /* Draw the gears */
-    draw_gear(g_gear1, transform, -3.0, -2.0, g_angle, red);
-    draw_gear(g_gear2, transform, 3.1, -2.0, -2 * g_angle - 9.0, green);
-    draw_gear(g_gear3, transform, -3.1, 4.2, -2 * g_angle - 25.0, blue);
+    draw_gear(g_gear1, transform, -3.0, -2.0, g_angle, g_red);
+    draw_gear(g_gear2, transform, 3.1, -2.0, -2 * g_angle - 9.0, g_green);
+    draw_gear(g_gear3, transform, -3.1, 4.2, -2 * g_angle - 25.0, g_blue);
 }
 
 static int
@@ -610,44 +624,41 @@ gears_reshape(int width, int height)
 static void
 gears_idle(void)
 {
-    static int frames = 0;
-    static double tRot0 = -1.0;
-    static double tRate0 = -1.0;
     double dt;
     double t;
     GLfloat seconds;
     GLfloat fps;
 
     t = (now() - g_start_time)  / 1000.0;
-    if (tRot0 < 0.0)
+    if (g_tRot0 < 0.0)
     {
-        tRot0 = t;
+        g_tRot0 = t;
     }
-    dt = t - tRot0;
-    tRot0 = t;
+    dt = t - g_tRot0;
+    g_tRot0 = t;
     /* advance rotation for next frame */
     g_angle += 70.0 * dt; /* 70 degrees per second */
     if (g_angle > 3600.0)
     {
         g_angle -= 3600.0;
     }
-    frames++;
-    if (tRate0 < 0.0)
+    g_frames++;
+    if (g_tRate0 < 0.0)
     {
-        tRate0 = t;
+        g_tRate0 = t;
     }
-    if (t - tRate0 >= 5.0)
+    if (t - g_tRate0 >= 5.0)
     {
-        seconds = t - tRate0;
-        fps = frames / seconds;
+        seconds = t - g_tRate0;
+        fps = g_frames / seconds;
         printf("%d frames in %3.1f seconds = %6.3f FPS\n",
-               frames, seconds, fps);
-        tRate0 = t;
-        frames = 0;
+               g_frames, seconds, fps);
+        g_tRate0 = t;
+        g_frames = 0;
     }
 }
 
-static const char vertex_shader[] =
+static const char g_vertex_shader[] =
 "attribute vec3 position;\n"
 "attribute vec3 normal;\n"
 "\n"
@@ -677,8 +688,8 @@ static const char vertex_shader[] =
 "    gl_Position = ModelViewProjectionMatrix * vec4(position, 1.0);\n"
 "}";
 
-static const char fragment_shader[] =
-"precision mediump float;\n"
+static const char g_fragment_shader[] =
+"precision highp float;\n"
 "varying vec4 Color;\n"
 "\n"
 "void main(void)\n"
@@ -686,7 +697,7 @@ static const char fragment_shader[] =
 "    gl_FragColor = Color;\n"
 "}";
 
-static void
+static int
 gears_init(void)
 {
     GLuint v;
@@ -698,37 +709,46 @@ gears_init(void)
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
-
     /* Compile the vertex shader */
-    p = vertex_shader;
+    p = g_vertex_shader;
     v = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(v, 1, &p, NULL);
     glCompileShader(v);
+    compiled = 0;
     glGetShaderiv(v, GL_COMPILE_STATUS, &compiled);
     printf("vertex shader compiled %d\n", compiled);
-
+    if (!compiled)
+    {
+        return 1;
+    }
     /* Compile the fragment shader */
-    p = fragment_shader;
+    p = g_fragment_shader;
     f = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(f, 1, &p, NULL);
     glCompileShader(f);
+    compiled = 0;
     glGetShaderiv(f, GL_COMPILE_STATUS, &compiled);
     printf("fragment shader compiled %d\n", compiled);
-
+    if (!compiled)
+    {
+        return 1;
+    }
     /* Create and link the shader program */
     program = glCreateProgram();
     glAttachShader(program, v);
     glAttachShader(program, f);
     glBindAttribLocation(program, 0, "position");
     glBindAttribLocation(program, 1, "normal");
-
     glLinkProgram(program);
+    linked = 0;
     glGetProgramiv(program, GL_LINK_STATUS, &linked);
     printf("program linked %d\n", linked);
-
+    if (!linked)
+    {
+        return 1;
+    }
     /* Enable the shaders */
     glUseProgram(program);
-
     /* Get the locations of the uniforms so we can access them */
     g_ModelViewProjectionMatrix_location =
         glGetUniformLocation(program, "ModelViewProjectionMatrix");
@@ -738,41 +758,32 @@ gears_init(void)
         glGetUniformLocation(program, "LightSourcePosition");
     g_MaterialColor_location =
         glGetUniformLocation(program, "MaterialColor");
-
     /* Set the LightSourcePosition uniform which is constant throught
      * the program */
     glUniform4fv(g_LightSourcePosition_location, 1, g_LightSourcePosition);
-
     /* make the gears */
     g_gear1 = create_gear(1.0, 4.0, 1.0, 20, 0.7);
     g_gear2 = create_gear(0.5, 2.0, 2.0, 10, 0.7);
     g_gear3 = create_gear(1.3, 2.0, 0.5, 10, 0.7);
+    return 0;
 }
 
 int
-main(int argc, char** argv)
+main(int argc, char **argv)
 {
-    EGLint config_attribs[] = {
-        EGL_BUFFER_SIZE,                EGL_DONT_CARE,
-        EGL_RED_SIZE,                   8,
-        EGL_GREEN_SIZE,                 8,
-        EGL_BLUE_SIZE,                  8,
-        EGL_DEPTH_SIZE,                 8,
-        EGL_SURFACE_TYPE,               EGL_PIXMAP_BIT | EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE,            EGL_OPENGL_ES2_BIT,
-        EGL_NONE };
-    EGLint context_attribs[] = {
-        EGL_CONTEXT_CLIENT_VERSION,     2,
-        EGL_NONE };
     EGLConfig cfg[4];
     EGLint count;
     int major;
     int minor;
     EGLSurface surface;
     EGLContext ctx;
-    EGLDisplay* edpy;
+    EGLDisplay *edpy;
     EGLint width;
     EGLint height;
+    const char *ext_str;
+
+    (void) argc;
+    (void) argv;
 
     if (!eglBindAPI(EGL_OPENGL_ES_API))
     {
@@ -791,8 +802,9 @@ main(int argc, char** argv)
         return 1;
     }
     printf("elgInitialize ok major %d minor %d\n", major, minor);
+    ext_str = eglQueryString(edpy, EGL_EXTENSIONS);
     memset(cfg, 0, sizeof(cfg));
-    if (eglChooseConfig(edpy, config_attribs, cfg, 4, &count) == EGL_FALSE)
+    if (eglChooseConfig(edpy, g_config_attribs, cfg, 4, &count) == EGL_FALSE)
     {
         printf("Couldn't get an EGLConfig\n");
         return 1;
@@ -803,7 +815,7 @@ main(int argc, char** argv)
         return 1;
     }
     printf("eglChooseConfig ok count %d\n", count);
-    ctx = eglCreateContext(edpy, cfg[0], EGL_NO_CONTEXT, context_attribs);
+    ctx = eglCreateContext(edpy, cfg[0], EGL_NO_CONTEXT, g_context_attribs);
     if (ctx == EGL_NO_CONTEXT)
     {
         printf("Couldn't create a GL context\n");
@@ -823,17 +835,20 @@ main(int argc, char** argv)
         return 1;
     }
     printf("eglMakeCurrent ok\n");
-    printf("GL_VENDOR     - %s\n"
-           "GL_VERSION    - %s\n"
-           "GL_EXTENSIONS - %s\n", glGetString(GL_VENDOR),
+    printf("EGL_EXTENSIONS - %s\n"
+           "GL_VENDOR      - %s\n"
+           "GL_VERSION     - %s\n"
+           "GL_EXTENSIONS  - %s\n", ext_str, glGetString(GL_VENDOR),
            glGetString(GL_VERSION), glGetString(GL_EXTENSIONS));
     printf("epoxy gl verstion %d\n", epoxy_gl_version());
-
     eglQuerySurface(edpy, surface, EGL_WIDTH, &width);
     eglQuerySurface(edpy, surface, EGL_HEIGHT, &height);
     printf("width %d height %d\n", width, height);
-
-    gears_init();
+    if (gears_init() != 0)
+    {
+        printf("gears_init failed\n");
+        return 1;
+    }
     gears_reshape(width, height);
     g_start_time = now();
     for (;;)
@@ -841,11 +856,6 @@ main(int argc, char** argv)
         gears_draw();
         eglSwapBuffers(edpy, surface);
         gears_idle();
-#if 0
-        view_rot[0] = fmod(view_rot[0] + 0.5, 360.0);
-        view_rot[1] = fmod(view_rot[1] + 0.7, 360.0);
-        view_rot[2] = fmod(view_rot[2] + 0.9, 360.0);
-#endif
     }
     eglTerminate(edpy);
     return 0;

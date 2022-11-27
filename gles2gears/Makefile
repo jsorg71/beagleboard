@@ -3,7 +3,7 @@ CC=/usr/bin/arm-linux-gnueabihf-gcc
 
 OBJS=gles2gears.o
 
-CFLAGS=-O2 -Wall
+CFLAGS=-O2 -Wall -Wextra
 
 LDFLAGS=
 
