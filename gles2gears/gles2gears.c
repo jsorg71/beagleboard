@@ -130,7 +130,8 @@ static const EGLint g_config_attribs[] =
     EGL_RED_SIZE,                   8,
     EGL_GREEN_SIZE,                 8,
     EGL_BLUE_SIZE,                  8,
-    EGL_DEPTH_SIZE,                 8,
+    EGL_ALPHA_SIZE,                 8,
+    EGL_DEPTH_SIZE,                 24,
     EGL_RENDERABLE_TYPE,            EGL_OPENGL_ES2_BIT,
     EGL_NONE
 };
@@ -178,7 +179,7 @@ static double g_tRate0 = -1.0;
  * @param z the z coortinate
  * @param n pointer to the normal table
  *
- * @return the operation error code
+ * @return pointer to the next GearVertex
  */
 static GearVertex *
 vert(GearVertex *v, GLfloat x, GLfloat y, GLfloat z, GLfloat n[3])
@@ -772,7 +773,9 @@ int
 main(int argc, char **argv)
 {
     EGLConfig cfg[4];
+    EGLConfig preferred_cfg;
     EGLint count;
+    EGLint value;
     int major;
     int minor;
     EGLSurface surface;
@@ -815,14 +818,22 @@ main(int argc, char **argv)
         return 1;
     }
     printf("eglChooseConfig ok count %d\n", count);
-    ctx = eglCreateContext(edpy, cfg[0], EGL_NO_CONTEXT, g_context_attribs);
+    preferred_cfg = cfg[0];
+    if (!eglGetConfigAttrib(edpy, preferred_cfg, EGL_CONFIG_ID, &value))
+    {
+        printf("eglGetConfigAttrib failed\n");
+        return 1;
+    }
+    printf("EGL_CONFIG_ID %d\n", value);
+    ctx = eglCreateContext(edpy, preferred_cfg, EGL_NO_CONTEXT,
+                           g_context_attribs);
     if (ctx == EGL_NO_CONTEXT)
     {
         printf("Couldn't create a GL context\n");
         return 1;
     }
     printf("eglCreateContext ok\n");
-    surface = eglCreateWindowSurface(edpy, cfg[0], MYWINDOW, NULL);
+    surface = eglCreateWindowSurface(edpy, preferred_cfg, MYWINDOW, NULL);
     if (surface == EGL_NO_SURFACE)
     {
         printf("eglCreateWindowSurface failed\n");
