@@ -1,0 +1,13 @@
+
+Boot TLX-1000 from kernel on SDCard, file system on CFCard, uboot is in nand
+
+old uboot on nand
+U-Boot 2011.06-rc3 (Mar 19 2012 - 07:41:52)
+
+loadaddr=82000000
+
+mmcinfo
+fatload mmc 0:1 ${loadaddr} uImage-3.2
+setenv bootargs 'console=ttyO2,115200n8 mem=320M rootwait root=/dev/sdb1 rw ip=205.5.60.15::205.5.60.1:255.255.255.0::eth0:none omapfb.mode=dvi:1920x1080MR-32@30 vram=32M smsc95xx.macaddr=00:17:D2:FF:00:00'
+bootm ${loadaddr}
+
