@@ -146,6 +146,9 @@ static int g_start_time;
 
 /** The view rotation [x, y, z] */
 static GLfloat g_view_rot[3] = { 20.0, 30.0, 0.0 };
+static GLfloat g_x_rot = 0.0;
+static GLfloat g_y_rot = 0.0;
+static GLfloat g_z_rot = 0.0;
 /** The gears */
 static struct gear_t *g_gear1;
 static struct gear_t *g_gear2;
@@ -778,6 +781,7 @@ main(int argc, char **argv)
     EGLint value;
     int major;
     int minor;
+    int index;
     EGLSurface surface;
     EGLContext ctx;
     EGLDisplay *edpy;
@@ -785,9 +789,30 @@ main(int argc, char **argv)
     EGLint height;
     const char *ext_str;
 
-    (void) argc;
-    (void) argv;
-
+    if (argc > 1)
+    {
+        for (index = 1; index < argc; index++)
+        {
+            if ((strcmp(argv[index], "-h") == 0) ||
+                (strcmp(argv[index], "--help") == 0))
+            {
+                printf("help: -x 1.0 -y 2.0 -z 3.0, set rotate degrees\n");
+                return 0;
+            }
+            else if ((strcmp(argv[index], "-x") == 0) && (index + 1 < argc))
+            {
+                g_x_rot = atof(argv[++index]);
+            }
+            else if ((strcmp(argv[index], "-y") == 0) && (index + 1 < argc))
+            {
+                g_y_rot = atof(argv[++index]);
+            }
+            else if ((strcmp(argv[index], "-z") == 0) && (index + 1 < argc))
+            {
+                g_z_rot = atof(argv[++index]);
+            }
+        }
+    }
     if (!eglBindAPI(EGL_OPENGL_ES_API))
     {
         printf("error\n");
@@ -867,6 +892,9 @@ main(int argc, char **argv)
         gears_draw();
         eglSwapBuffers(edpy, surface);
         gears_idle();
+        g_view_rot[0] = fmod(g_view_rot[0] + g_x_rot, 360.0);
+        g_view_rot[1] = fmod(g_view_rot[1] + g_y_rot, 360.0);
+        g_view_rot[2] = fmod(g_view_rot[2] + g_z_rot, 360.0);
     }
     eglTerminate(edpy);
     return 0;
